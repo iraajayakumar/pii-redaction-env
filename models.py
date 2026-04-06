@@ -7,21 +7,52 @@
 """
 Data models for the Pii Redaction Env Environment.
 
-The pii_redaction_env environment is a simple test environment that echoes back messages.
+The pii_redaction_env environment is a realistic testbed designed to evaluate and train AI agents for automated PII (Personally Identifiable Information) and PHI (Protected Health Information) detection, classification, and redaction. It simulates real-world compliance scenarios by providing progressively challenging tasks, from detecting direct identifiers to handling contextual, indirect PII, and resisting de-anonymization attacks..
 """
 
 from openenv.core.env_server.types import Action, Observation
 from pydantic import Field
+from typing import Optional, List, Dict
 
+class PIIAction(Action):
+    """Action for the Pii Redaction Env environment - a redacted version of the document."""
+    redacted_text: str = Field(
+        ...,
+        description="The document text with PII replaced by [REDACTED] tags"
+    )
+    identified_pii_types: List[str] = Field(
+        default_factory=list,
+        description="List of PII types the agent identified e.g. ['AADHAAR', 'PAN', 'PHONE']"
+    )
+    reasoning: str = Field(
+        default="",
+        description="Agent's explanation of what it redacted and why"
+    )
 
-class PiiRedactionAction(Action):
-    """Action for the Pii Redaction Env environment - just a message to echo."""
-
-    message: str = Field(..., description="Message to echo back")
-
-
-class PiiRedactionObservation(Observation):
-    """Observation from the Pii Redaction Env environment - the echoed message."""
-
-    echoed_message: str = Field(default="", description="The echoed message")
-    message_length: int = Field(default=0, description="Length of the echoed message")
+class PIIObservation(Observation):
+    """What the agent sees — the document and task instructions."""
+    document_text: str = Field(
+        ...,
+        description="The raw document text containing PII to be redacted"
+    )
+    task_type: str = Field(
+        ...,
+        description="One of: easy, medium, hard"
+    )
+    instructions: str = Field(
+        ...,
+        description="Specific instructions for this task"
+    )
+    legal_framework: str = Field(
+        default="DPDP Act 2023",
+        description="The legal framework to comply with"
+    )
+    attempt_number: int = Field(
+        default=1,
+        description="Which attempt this is (relevant for hard task)"
+    )
+    
+class PIIReward(Action):
+    """Reward model — not used directly but defines reward structure."""
+    score: float = Field(..., description="Score between 0.0 and 1.0")
+    feedback: str = Field(..., description="Explanation of the score")

@@ -36,18 +36,20 @@ except Exception as e:  # pragma: no cover
     ) from e
 
 try:
-    from ..models import PiiRedactionAction, PiiRedactionObservation
-    from .pii_redaction_env_environment import PiiRedactionEnvironment
-except ModuleNotFoundError:
-    from models import PiiRedactionAction, PiiRedactionObservation
-    from server.pii_redaction_env_environment import PiiRedactionEnvironment
-
+    from ..models import PIIAction, PIIObservation
+    from .pii_redaction_env_environment import PIIRedactionEnvironment
+except ImportError:
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from models import PIIAction, PIIObservation
+    from server.pii_redaction_env_environment import PIIRedactionEnvironment
 
 # Create the app with web interface and README integration
 app = create_app(
-    PiiRedactionEnvironment,
-    PiiRedactionAction,
-    PiiRedactionObservation,
+    PIIRedactionEnvironment,
+    PIIAction,
+    PIIObservation,
     env_name="pii_redaction_env",
     max_concurrent_envs=1,  # increase this number to allow more concurrent WebSocket sessions
 )
@@ -76,9 +78,4 @@ def main(host: str = "0.0.0.0", port: int = 8000):
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=8000)
-    args = parser.parse_args()
-    main(port=args.port)
+    main()

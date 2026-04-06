@@ -6,6 +6,6 @@
 
 """Pii Redaction Env environment server components."""
 
-from .pii_redaction_env_environment import PiiRedactionEnvironment
+from .pii_redaction_env_environment import PIIRedactionEnvironment
 
 __all__ = ["PiiRedactionEnvironment"]
