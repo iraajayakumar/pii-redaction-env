@@ -20,6 +20,8 @@ dependencies = [
     "openenv-core[core]>=0.2.2",
     # Environment-specific dependencies
     # Add all dependencies needed for your environment here
+    # spaCy for NER (Named Entity Recognition) in medium task
+    "spacy>=3.7.0",
     # Examples:
     # "numpy>=1.19.0",
     # "torch>=2.0.0",
