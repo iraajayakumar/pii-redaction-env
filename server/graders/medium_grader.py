@@ -69,16 +69,33 @@ SENSITIVITY_PROFILES = {
 # Default sensitivity (can be overridden via environment variable)
 DEFAULT_SENSITIVITY = os.getenv("PII_SENSITIVITY_PROFILE", "default")
 
-# Load spaCy model (English - we'll use for common names/org patterns)
-try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
-    # If model not found, try to download it
-    import subprocess
-    import sys
-    print("Downloading spaCy model en_core_web_sm...")
-    subprocess.check_call([sys.executable, "-m", "spacy", "download", "en_core_web_sm"])
-    nlp = spacy.load("en_core_web_sm")
+# Lazy-load spaCy model (only when actually needed, not at import time)
+_nlp_model = None
+
+def get_nlp_model():
+    """
+    Lazy-load spaCy NER model (English).
+    Only loads on first use to avoid startup failures if model isn't available.
+    """
+    global _nlp_model
+    if _nlp_model is not None:
+        return _nlp_model
+    
+    try:
+        _nlp_model = spacy.load("en_core_web_sm")
+        return _nlp_model
+    except OSError:
+        # If model not found, try to download it
+        import subprocess
+        import sys
+        print("Downloading spaCy model en_core_web_sm...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "spacy", "download", "en_core_web_sm"])
+            _nlp_model = spacy.load("en_core_web_sm")
+            return _nlp_model
+        except Exception as e:
+            print(f"Failed to load spaCy model: {e}. Falling back to pattern-based extraction.")
+            return None
 
 # ---------------------------------------------------------------------------
 # VALID REDACTION TAGS FOR MEDIUM TASK
@@ -301,6 +318,11 @@ def extract_named_entities(text: str) -> Dict[str, List[str]]:
     Returns:
         Dict with keys PERSON, ORG, GPE and list of entity values
     """
+    nlp = get_nlp_model()
+    if nlp is None:
+        # Fallback if spacy model unavailable
+        return {"PERSON": [], "ORG": [], "GPE": []}
+    
     doc = nlp(text)
     entities = {"PERSON": [], "ORG": [], "GPE": []}
     

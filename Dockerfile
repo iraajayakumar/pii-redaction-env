@@ -54,6 +54,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         uv sync --no-editable; \
     fi
 
+# Download spaCy NER model during build (prevents startup issues)
+RUN .venv/bin/python -m spacy download en_core_web_sm || true
+
 # Final runtime stage
 FROM ${BASE_IMAGE}
 
