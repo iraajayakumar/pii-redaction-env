@@ -56,3 +56,8 @@ class PIIReward(Action):
     """Reward model — not used directly but defines reward structure."""
     score: float = Field(..., description="Score between 0.0 and 1.0")
     feedback: str = Field(..., description="Explanation of the score")
+
+
+# Backward compatibility aliases
+PiiRedactionAction = PIIAction
+PiiRedactionObservation = PIIObservation
