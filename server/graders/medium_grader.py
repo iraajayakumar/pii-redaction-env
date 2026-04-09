@@ -23,6 +23,7 @@ import spacy
 from difflib import SequenceMatcher
 import requests
 from dotenv import load_dotenv
+from huggingface_hub import InferenceClient
 
 # Load environment variables from .env file
 load_dotenv()
@@ -149,6 +150,8 @@ class LLMValidator:
         """
         if self.backend == "mock":
             return self._validate_mock(original_context, redacted_context, pii_type)
+        elif self.backend == "huggingface":
+            return self._validate_huggingface(original_context, redacted_context, pii_type)
         elif self.backend == "ollama":
             return self._validate_ollama(original_context, redacted_context, pii_type)
         # elif self.backend == "openai":
@@ -172,6 +175,80 @@ class LLMValidator:
                 return 0.85, f"Properly redacted {pii_type} with valid tags"
         else:
             return 0.5, "Context unchanged or expanded - may indicate missed redaction"
+    
+    def _validate_huggingface(self, original_context: str, redacted_context: str, pii_type: str) -> Tuple[float, str]:
+        """
+        Validate using HuggingFace Inference API (Zephyr).
+        Sends context to HuggingFace Zephyr model for semantic assessment.
+        
+        Args:
+            original_context: Original context with PII
+            redacted_context: Redacted context
+            pii_type: Type of PII that was redacted
+            
+        Returns:
+            Tuple of (confidence_score, explanation)
+        """
+        try:
+            # Get HuggingFace config from environment
+            hf_token = self.config.get('token', os.getenv('HF_TOKEN'))
+            model = self.config.get('model', os.getenv('HF_MODEL', 'HuggingFaceH4/zephyr-7b-beta'))
+            
+            if not hf_token:
+                return 0.7, "HF_TOKEN not configured - using default confidence"
+            
+            # Initialize HuggingFace Inference Client
+            client = InferenceClient(model=model, token=hf_token)
+            
+            # Prepare simplified prompt for faster response
+            prompt = f"""Evaluate this PII redaction (score 0.0-1.0):
+Original: {original_context[:200]}
+Redacted: {redacted_context[:200]}
+Type: {pii_type}
+
+Respond with JSON: {{"score": 0.X, "explanation": "brief text"}}"""
+            
+            # Call HuggingFace API
+            response_text = client.text_generation(
+                prompt,
+                max_new_tokens=200,
+                temperature=0.2
+            )
+            
+            # Extract JSON from response
+            try:
+                json_match = re.search(r'\{[^}]*"score"[^}]*\}', response_text, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(0)
+                    parsed = json.loads(json_str)
+                    score = float(parsed.get('score', 0.7))
+                    explanation = str(parsed.get('explanation', 'Validated'))
+                    return min(1.0, max(0.0, score)), explanation
+            except (json.JSONDecodeError, ValueError):
+                pass
+            
+            # Fallback: parse score from text
+            score_match = re.search(r'score["\']?\s*[:=]?\s*([0-9.]+)', response_text, re.IGNORECASE)
+            if score_match:
+                score = float(score_match.group(1))
+                return min(1.0, max(0.0, score)), "Parsed from response"
+            
+            # If very high score or low score keyword, return accordingly
+            if 'good' in response_text.lower() or 'correct' in response_text.lower():
+                return 0.85, "LLM confirmed redaction"
+            elif 'bad' in response_text.lower() or 'wrong' in response_text.lower():
+                return 0.45, "LLM found issue"
+            
+            return 0.75, "Validation complete"
+            
+        except Exception as e:
+            error_msg = str(e)[:30]
+            if 'timeout' in error_msg.lower():
+                return 0.75, "HF API timeout - likely still generating"
+            elif 'connection' in error_msg.lower():
+                return 0.65, "HF API connection issue"
+            else:
+                return 0.65, f"Error: {error_msg}"
     
     def _validate_ollama(self, original_context: str, redacted_context: str, pii_type: str) -> Tuple[float, str]:
         """

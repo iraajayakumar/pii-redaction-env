@@ -26,6 +26,31 @@ An OpenEnv environment for training and evaluating AI agents to redact personall
 - **Contextual PII** (names, organizations, locations in medical/legal contexts)
 - **Quasi-Identifiers** (age, roles, rare conditions) that could enable re-identification
 
+### Downstream Use Cases
+
+This environment directly enables:
+
+**1. Healthcare Organizations**
+- De-identification of Electronic Health Records (EHRs) for research data sharing
+- HIPAA-compliant document anonymization for audit trails
+- Training agents to protect patient privacy while preserving medical context
+
+**2. Legal/Compliance Teams**
+- Automated redaction of contracts, court filings, and legal briefs before public release
+- Preparation of documents for regulatory submissions (DPDP Act 2023, GDPR)
+- Evaluation of redaction agent performance under Indian privacy law
+
+**3. Financial Institutions**
+- Customer document anonymization (KYC, loan applications) for ML training datasets
+- Internal document sanitization for knowledge base systems
+- Audit trail protection for compliance reporting
+
+**4. RL/ML Research**
+- Benchmark for evaluating LLM capabilities in nuanced privacy tasks
+- Training environment for agents that must balance privacy with utility
+- Study of reward shaping in safety-critical compliance scenarios
+- Testing frontier models (GPT-4, Claude, etc.) on realistic privacy challenges
+
 ## Environment Description
 
 ### Task Difficulty Progression
@@ -44,7 +69,7 @@ The environment provides **3 tasks with increasing difficulty**:
 - **Objective:** Detect contextual PII that requires semantic understanding
 - **Difficulty:** Medium  
 - **PII Types:** Person names, organizations, locations, medical facilities, job titles in context
-- **Agent Strategy:** Named Entity Recognition (NER) + LLM-based validation (Mistral)
+- **Agent Strategy:** Named Entity Recognition (NER) + LLM-based validation (HuggingFace)
 - **Expected Score:** 0.65-0.85 (requires context understanding)
 - **Sample Document:** Medical reports, legal documents with implicit person/org references
 
@@ -131,9 +156,9 @@ episode_score = (easy_score + medium_score + hard_score) / 3
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.10+
 - Docker (for container deployment)
-- Ollama + Mistral-7B (for LLM grading, local inference only)
+- HuggingFace account with read-only API token (for LLM grading)
 
 ### Local Installation
 
@@ -156,34 +181,37 @@ openenv validate
 
 ### Environment Variables
 
+Create a `.env` file in `pii_redaction_env/` with:
+
 ```bash
-# Required for LLM-based grading/inference
-export API_BASE_URL="http://localhost:11434"      # Ollama endpoint
-export MODEL_NAME="mistral"                        # Model to use
-export HF_TOKEN="your-huggingface-token"          # Optional, for HuggingFace API fallback
+# LLM Backend Configuration (HuggingFace Inference API)
+LLM_BACKEND=huggingface
+HF_TOKEN=your-huggingface-read-only-token  # Get from https://huggingface.co/settings/tokens
+HF_MODEL=HuggingFaceH4/zephyr-7b-beta      # Judge model (efficient 7B model)
+
+# Agent Model (displayed in logs)
+MODEL_NAME=zephyr-7b-beta
+
+# Feature Flags
+USE_LLM_VALIDATION=true
+SENSITIVITY_PROFILE=default
 ```
+
+**To get your HF token:**
+1. Visit https://huggingface.co/settings/tokens
+2. Create a new fine-grained read-only token
+3. Accept the license for `HuggingFaceH4/zephyr-7b-beta` model
 
 ### Running Locally
 
 ```bash
-# Start Ollama (in separate terminal)
-ollama serve
-
-# In another terminal, pull Mistral model
-ollama pull mistral
+# Set up environment variables
+cp pii_redaction_env/.env.example pii_redaction_env/.env
+# Edit .env and add your HF_TOKEN
 
 # Run baseline inference
 cd pii_redaction_env
 python inference.py
-```
-
-**Expected Output:**
-```
-[START] task=pii_redaction env=pii_redaction_env model=mistral
-[STEP] step=1 action=redact_structured_pii(caught=10/10) reward=0.92 done=false error=null
-[STEP] step=2 action=redact_contextual_pii(method=agent_llm+grader_validation) reward=0.71 done=false error=null
-[STEP] step=3 action=defend_against_reidentification(attempts=2/3) reward=0.68 done=true error=null
-[END] success=true steps=3 score=0.77 rewards=0.92,0.71,0.68
 ```
 
 ### Docker Deployment
@@ -194,91 +222,38 @@ cd pii_redaction_env
 docker build -t pii-redaction:latest .
 
 # Run container
-docker run -e API_BASE_URL="http://localhost:11434" \
-           -e MODEL_NAME="mistral" \
+docker run -e HF_TOKEN="your-huggingface-token" \
+           -e HF_MODEL="HuggingFaceH4/zephyr-7b-beta" \
+           -e LLM_BACKEND="huggingface" \
            -p 8000:8000 \
            pii-redaction:latest
 ```
 
+**Note:** HuggingFace API requires internet access. The environment pings `api-inference.huggingface.co`.
+
 ### Deploy to Hugging Face Spaces
 
-```bash
-# Ensure you're logged in
-huggingface-cli login
-
-# Create Space on Hugging Face (via web UI)
-# Then clone and push:
-git clone https://huggingface.co/spaces/YOUR_USERNAME/pii-redaction-env
-cd pii-redaction-env
-cp -r ../pii_redaction_env/* .
-git add .
-git commit -m "Initial deployment"
-git push
-```
+This environment is already deployed to HuggingFace Spaces:
+**[https://huggingface.co/spaces/iraajayakumar/pii-redaction-environment](https://huggingface.co/spaces/iraajayakumar/pii-redaction-environment)**
 
 ---
 
 ## Baseline Scores
 
-**Baseline Agent:** Mistral-7B with structured prompting
+**Baseline Agent:** Mistral-7B (via OpenAI client) with HuggingFace Zephyr-7b-beta judge
 
-| Task | Score | Strategy |
-|------|-------|----------|
-| Easy | 0.92 | Regex pattern + spaCy NER |
-| Medium | 0.71 | NER + LLM validation (Mistral) |
-| Hard | 0.68 | 2-attempt iterative defense + quasi-ID removal |
-| **Overall** | **0.77** | Average of 3 tasks |
+**Actual Test Run (April 10, 2026):**
 
-**Note:** Scores vary based on document complexity. Hard task shows improvement with iterative feedback from re-identification judge.
-
----
-
-## Testing
-
-### Quick Test
-```bash
-python test_quick_judges.py
-```
-
-### Full Integration Test
-```bash
-python test_llm_judges_integrated.py
-```
-
-### All Tasks Comprehensive Test
-```bash
-python test_all_tasks_comprehensive.py
-```
+| Task | Score | Notes |
+|------|-------|-------|
+| Easy | 0.500 | Caught 4/8 structured PIIs (Aadhaar, PAN, email detected; phone missed) |
+| Medium | 0.440 | NER + HF validation working; partial context understanding |
+| Hard | 0.230 | 3 attempts, all scored 0.230 (re-identification risk remains high) |
+| **Overall** | **0.390** | Low baseline shows room for agent improvement (feature, not bug) |
 
 ---
 
-## File Structure
 
-```
-pii_redaction_env/
-├── inference.py                      # Baseline agent + evaluation loop
-├── openenv.yaml                      # OpenEnv spec
-├── Dockerfile                        # Docker container definition
-├── README.md                         # This file
-├── server/
-│   ├── app.py                       # FastAPI server
-│   ├── requirements.txt              # Python dependencies
-│   ├── tasks/
-│   │   ├── easy.py                  # Easy task generator
-│   │   ├── medium.py                # Medium task generator
-│   │   └── hard.py                  # Hard task generator
-│   ├── graders/
-│   │   ├── easy_grader.py           # Easy task grader (regex)
-│   │   ├── medium_grader.py         # Medium task grader (NER + LLM)
-│   │   └── hard_grader.py           # Hard task grader (LLM judge)
-│   └── data/
-│       └── documents.py             # Professional sample documents
-└── tests/
-    ├── test_quick_judges.py         # Fast grader tests
-    └── test_llm_judges_integrated.py # Full integration tests
-```
-
----
 
 ## API Reference
 
@@ -308,215 +283,3 @@ state = await env.state()
 
 ---
 
-## Troubleshooting
-
-**"Ollama not available" warning:**
-- Ensure Ollama is running: `ollama serve`
-- Check endpoint: `curl http://localhost:11434/api/tags`
-- Falls back to mock judges automatically
-
-**Inference timeout (>20 minutes):**
-- Mistral inference takes ~2-5 min per task
-- Ensure sufficient resources (2+ vCPU, 8GB RAM)
-- For faster iteration, set `use_llm_judge=False` in graders
-
-**OpenEnv validation fails:**
-- Run: `openenv validate` from `pii_redaction_env/` directory
-- Check `openenv.yaml` exists with proper structure
-- Verify all imports in Python files work
-
----
-
-## Citation
-
-If you use this environment in research, please cite:
-
-```bibtex
-@misc{pii_redaction_env,
-  title={PII Redaction Environment: Training Agents for Privacy Compliance},
-  author={Jayakumar, Iraa},
-  year={2026},
-  howpublished={\url{https://github.com/iraajayakumar/pii-redaction-env}}
-}
-```
-
----
-
-## License
-
-MIT License - See LICENSE file for details
-
-- Authenticate with Hugging Face: The command will prompt for login if not already authenticated
-
-### Options
-
-- `--directory`, `-d`: Directory containing the OpenEnv environment (defaults to current directory)
-- `--repo-id`, `-r`: Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)
-- `--base-image`, `-b`: Base Docker image to use (overrides Dockerfile FROM)
-- `--private`: Deploy the space as private (default: public)
-
-### Examples
-
-```bash
-# Push to your personal namespace (defaults to username/env-name from openenv.yaml)
-openenv push
-
-# Push to a specific repository
-openenv push --repo-id my-org/my-env
-
-# Push with a custom base image
-openenv push --base-image ghcr.io/meta-pytorch/openenv-base:latest
-
-# Push as a private space
-openenv push --private
-
-# Combine options
-openenv push --repo-id my-org/my-env --base-image custom-base:latest --private
-```
-
-After deployment, your space will be available at:
-`https://huggingface.co/spaces/<repo-id>`
-
-The deployed space includes:
-- **Web Interface** at `/web` - Interactive UI for exploring the environment
-- **API Documentation** at `/docs` - Full OpenAPI/Swagger interface
-- **Health Check** at `/health` - Container health monitoring
-- **WebSocket** at `/ws` - Persistent session endpoint for low-latency interactions
-
-## Environment Details
-
-### Action
-**PiiRedactionAction**: Contains a single field
-- `message` (str) - The message to echo back
-
-### Observation
-**PiiRedactionObservation**: Contains the echo response and metadata
-- `echoed_message` (str) - The message echoed back
-- `message_length` (int) - Length of the message
-- `reward` (float) - Reward based on message length (length × 0.1)
-- `done` (bool) - Always False for echo environment
-- `metadata` (dict) - Additional info like step count
-
-### Reward
-The reward is calculated as: `message_length × 0.1`
-- "Hi" → reward: 0.2
-- "Hello, World!" → reward: 1.3
-- Empty message → reward: 0.0
-
-## Advanced Usage
-
-### Connecting to an Existing Server
-
-If you already have a Pii Redaction Env environment server running, you can connect directly:
-
-```python
-from pii_redaction_env import PiiRedactionEnv
-
-# Connect to existing server
-pii_redaction_envenv = PiiRedactionEnv(base_url="<ENV_HTTP_URL_HERE>")
-
-# Use as normal
-result = pii_redaction_envenv.reset()
-result = pii_redaction_envenv.step(PiiRedactionAction(message="Hello!"))
-```
-
-Note: When connecting to an existing server, `pii_redaction_envenv.close()` will NOT stop the server.
-
-### Using the Context Manager
-
-The client supports context manager usage for automatic connection management:
-
-```python
-from pii_redaction_env import PiiRedactionAction, PiiRedactionEnv
-
-# Connect with context manager (auto-connects and closes)
-with PiiRedactionEnv(base_url="http://localhost:8000") as env:
-    result = env.reset()
-    print(f"Reset: {result.observation.echoed_message}")
-    # Multiple steps with low latency
-    for msg in ["Hello", "World", "!"]:
-        result = env.step(PiiRedactionAction(message=msg))
-        print(f"Echoed: {result.observation.echoed_message}")
-```
-
-The client uses WebSocket connections for:
-- **Lower latency**: No HTTP connection overhead per request
-- **Persistent session**: Server maintains your environment state
-- **Efficient for episodes**: Better for many sequential steps
-
-### Concurrent WebSocket Sessions
-
-The server supports multiple concurrent WebSocket connections. To enable this,
-modify `server/app.py` to use factory mode:
-
-```python
-# In server/app.py - use factory mode for concurrent sessions
-app = create_app(
-    PiiRedactionEnvironment,  # Pass class, not instance
-    PiiRedactionAction,
-    PiiRedactionObservation,
-    max_concurrent_envs=4,  # Allow 4 concurrent sessions
-)
-```
-
-Then multiple clients can connect simultaneously:
-
-```python
-from pii_redaction_env import PiiRedactionAction, PiiRedactionEnv
-from concurrent.futures import ThreadPoolExecutor
-
-def run_episode(client_id: int):
-    with PiiRedactionEnv(base_url="http://localhost:8000") as env:
-        result = env.reset()
-        for i in range(10):
-            result = env.step(PiiRedactionAction(message=f"Client {client_id}, step {i}"))
-        return client_id, result.observation.message_length
-
-# Run 4 episodes concurrently
-with ThreadPoolExecutor(max_workers=4) as executor:
-    results = list(executor.map(run_episode, range(4)))
-```
-
-## Development & Testing
-
-### Direct Environment Testing
-
-Test the environment logic directly without starting the HTTP server:
-
-```bash
-# From the server directory
-python3 server/pii_redaction_env_environment.py
-```
-
-This verifies that:
-- Environment resets correctly
-- Step executes actions properly
-- State tracking works
-- Rewards are calculated correctly
-
-### Running Locally
-
-Run the server locally for development:
-
-```bash
-uvicorn server.app:app --reload
-```
-
-## Project Structure
-
-```
-pii_redaction_env/
-├── .dockerignore         # Docker build exclusions
-├── __init__.py            # Module exports
-├── README.md              # This file
-├── openenv.yaml           # OpenEnv manifest
-├── pyproject.toml         # Project metadata and dependencies
-├── uv.lock                # Locked dependencies (generated)
-├── client.py              # PiiRedactionEnv client
-├── models.py              # Action and Observation models
-└── server/
-    ├── __init__.py        # Server module exports
-    ├── pii_redaction_env_environment.py  # Core environment logic
-    ├── app.py             # FastAPI application (HTTP + WebSocket endpoints)
-    └── Dockerfile         # Container image definition
-```

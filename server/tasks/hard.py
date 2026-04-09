@@ -50,7 +50,7 @@ def _get_hard_samples():
         _HARD_SAMPLES = {
             doc["id"]: {
                 "id": doc["id"],
-                "text": doc["text"],
+                "document_text": doc["text"],
                 "pii_present": doc.get("pii_present", []),
                 "expected_redacted": doc.get("expected_redacted", ""),
                 "source": doc.get("source", "")
@@ -88,7 +88,7 @@ def get_hard_task(task_id: str = "hard_021") -> dict:
         task_id: Task ID (hard_021 through hard_030)
     
     Returns:
-        Dictionary with id, text, pii_present, expected_redacted, source
+        Dictionary with id, document_text, pii_present, expected_redacted, source
     """
     if task_id not in HARD_TASK_SAMPLES:
         task_id = "hard_021"  # Default to first hard task

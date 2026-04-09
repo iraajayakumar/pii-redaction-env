@@ -39,6 +39,7 @@ import json
 import requests
 from typing import Dict, List, Tuple, Any, Optional
 from dotenv import load_dotenv
+from huggingface_hub import InferenceClient
 from .medium_grader import grade_medium_task
 
 # Load environment variables
@@ -90,25 +91,31 @@ QUASI_IDENTIFIER_PATTERNS = {
 }
 
 
-def ollama_quasi_identifier_judge(redacted_text: str, endpoint: str = None, model: str = None) -> Tuple[bool, str, float]:
+def huggingface_quasi_identifier_judge(redacted_text: str, hf_token: str = None, model: str = None) -> Tuple[bool, str, float]:
     """
-    Real LLM-based judge using Ollama/Mistral for re-identification assessment.
+    Real LLM-based judge using HuggingFace Inference API (Zephyr) for re-identification assessment.
     
-    Uses Mistral-7B to evaluate if quasi-identifiers still allow re-identification.
+    Uses Zephyr-7B-beta via HuggingFace to evaluate if quasi-identifiers still allow re-identification.
     Asks: "Can you identify who this person is from this redacted document?"
     
     Args:
         redacted_text: The redacted document
-        endpoint: Ollama endpoint (default: localhost:11434)
-        model: Model name (default: mistral)
+        hf_token: HuggingFace API token (default: from HF_TOKEN env var)
+        model: Model name (default: HuggingFaceH4/zephyr-7b-beta)
         
     Returns:
         Tuple of (is_reidentifiable, reasoning, confidence)
     """
     try:
-        # Get Ollama config
-        endpoint = endpoint or os.getenv('OLLAMA_ENDPOINT', 'http://localhost:11434')
-        model = model or os.getenv('OLLAMA_MODEL', 'mistral')
+        # Get HuggingFace config from environment
+        hf_token = hf_token or os.getenv('HF_TOKEN')
+        model = model or os.getenv('HF_MODEL', 'HuggingFaceH4/zephyr-7b-beta')
+        
+        if not hf_token:
+            return True, "HF_TOKEN not set - defaulting to conservative assessment", 0.4
+        
+        # Initialize HuggingFace Inference Client
+        client = InferenceClient(model=model, token=hf_token)
         
         # Prepare prompt for re-identification assessment
         prompt = f"""You are a privacy expert assessing PII redaction quality.
@@ -129,24 +136,12 @@ Respond with JSON:
 
 Be strict - any combination of rare attributes that could narrow down identity counts as reidentifiable."""
         
-        # Call Ollama API
-        response = requests.post(
-            f"{endpoint}/api/generate",
-            json={
-                "model": model,
-                "prompt": prompt,
-                "stream": False,
-                "temperature": 0.1  # Low temperature for consistent assessment
-            },
-            timeout=120
+        # Call HuggingFace Inference API
+        response_text = client.text_generation(
+            prompt,
+            max_new_tokens=500,
+            temperature=0.1  # Low temperature for consistent assessment
         )
-        
-        if response.status_code != 200:
-            return True, f"Ollama error ({response.status_code}) - defaulting to conservative assessment", 0.5
-        
-        # Parse response
-        result = response.json()
-        response_text = result.get('response', '')
         
         # Extract JSON from response
         try:
@@ -170,12 +165,14 @@ Be strict - any combination of rare attributes that could narrow down identity c
         # Default conservative assessment
         return True, "LLM assessment inconclusive - conservative assessment", 0.6
         
-    except requests.exceptions.Timeout:
-        return True, "Ollama timeout - defaulting to conservative (reidentifiable) assessment", 0.5
-    except requests.exceptions.ConnectionError:
-        return True, "Ollama not running - defaulting to conservative assessment", 0.4
     except Exception as e:
-        return True, f"LLM judge error: {str(e)[:50]}", 0.3
+        error_msg = str(e)[:50]
+        if 'timeout' in error_msg.lower():
+            return True, "HF API timeout - defaulting to conservative assessment", 0.5
+        elif 'connection' in error_msg.lower():
+            return True, "HF API connection error - defaulting to conservative assessment", 0.4
+        else:
+            return True, f"LLM judge error: {error_msg}", 0.3
 
 
 def mock_quasi_identifier_judge(redacted_text: str) -> Tuple[bool, str, float]:
@@ -320,11 +317,11 @@ def grade_hard_task(original_text: str,
     
     # Evaluate re-identification vulnerability
     if use_llm_judge:
-        # Use real Ollama/Mistral LLM judge
-        is_reidentifiable, reasoning, confidence = ollama_quasi_identifier_judge(
+        # Use real HuggingFace/Mistral LLM judge
+        is_reidentifiable, reasoning, confidence = huggingface_quasi_identifier_judge(
             redacted_text,
-            endpoint=ollama_endpoint,
-            model=ollama_model
+            hf_token=os.getenv('HF_TOKEN'),
+            model=os.getenv('HF_MODEL')
         )
     else:
         # Use fast mock judge (for testing/offline)
