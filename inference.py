@@ -53,15 +53,11 @@ except ImportError:
 ENV_BASE_URL = os.getenv("ENV_BASE_URL", "http://localhost:8000")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "HuggingFaceH4/zephyr-7b-beta")
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
+# Priority: API_KEY (injected by validator) → HF_TOKEN (user's token)
+API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN")
 
-# Initialize OpenAI client
-try:
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY or "", timeout=60.0)
-except Exception as e:
-    print(f"[DEBUG] OpenAI client initialization warning: {e}", flush=True)
-    # Client will be created on first use if API_KEY becomes available
-    client = None
+# Initialize OpenAI client with their injected credentials
+client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY or "", timeout=60.0)
 
 # Task configuration
 TASK_NAME = "pii_redaction"
@@ -100,38 +96,34 @@ def truncate_action(action_str: str, max_len: int = 100) -> str:
 
 def get_agent_redaction(original_text: str, difficulty: str) -> str:
     """Get redaction from LLM agent via OpenAI client."""
-    global client
     
-    try:
-        # Initialize client if not already done
-        if client is None:
-            client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY or "", timeout=60.0)
-        
-        if difficulty == "easy":
-            prompt = f"""Redact structured PII: Aadhaar, PAN, phone, email, bank account, IFSC.
+    if difficulty == "easy":
+        prompt = f"""Redact structured PII: Aadhaar, PAN, phone, email, bank account, IFSC.
 Replace with [REDACTED_TYPE].
 
 Document:
 {original_text}
 
 Return only the redacted text."""
-        elif difficulty == "medium":
-            prompt = f"""Redact structured + contextual PII: names, organizations, locations, facilities.
+    elif difficulty == "medium":
+        prompt = f"""Redact structured + contextual PII: names, organizations, locations, facilities.
 Use [REDACTED_NAME], [REDACTED_ORGANIZATION], [REDACTED_LOCATION], [REDACTED_FACILITY].
 
 Document:
 {original_text}
 
 Return only the redacted text."""
-        else:  # hard
-            prompt = f"""Aggressively redact ALL PII and quasi-identifiers to prevent re-identification.
+    else:  # hard
+        prompt = f"""Aggressively redact ALL PII and quasi-identifiers to prevent re-identification.
 Include: structured PII, names, orgs, locations, age, roles, conditions, hospitals.
 
 Document:
 {original_text}
 
 Return only the heavily redacted text."""
-        
+    
+    try:
+        # Make the API call through the provided base_url and api_key
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
@@ -145,9 +137,10 @@ Return only the heavily redacted text."""
         
         return (response.choices[0].message.content or "").strip()
     except Exception as e:
-        print(f"[DEBUG] Agent redaction failed ({difficulty}): {e}", flush=True)
-        # Fallback: return original text when API is unavailable
-        return original_text  # Fallback: return original
+        # Log errors but still return something
+        print(f"[DEBUG] Agent redaction error ({difficulty}): {type(e).__name__}: {e}", flush=True)
+        # Return original text as fallback
+        return original_text
 
 
 # ============================================================================
