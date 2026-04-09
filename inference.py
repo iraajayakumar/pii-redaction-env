@@ -49,15 +49,22 @@ except ImportError:
         print(f"[DEBUG] Make sure client.py and models.py are in the same directory", flush=True)
         exit(1)
 
-# Environment variables (template-aligned with validator requirements)
+# Environment variables (STRICT access for validator requirements)
 # Validator injects: API_BASE_URL (proxy URL), API_KEY (authentication)
-# Priority: Use injected values first, fallback to local defaults
-API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
-API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN")
+# MUST use os.environ[] strictly to guarantee validator's values are used
+try:
+    # Strict access - use EXACTLY what validator injected
+    API_BASE_URL = os.environ["API_BASE_URL"]
+    API_KEY = os.environ["API_KEY"]
+except KeyError:
+    # Local testing fallback only
+    API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+    API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN", "")
+
 ENV_BASE_URL = os.getenv("ENV_BASE_URL", "http://localhost:8000")
 MODEL_NAME = os.getenv("MODEL_NAME", "HuggingFaceH4/zephyr-7b-beta")
 
-# Initialize OpenAI client
+# Initialize OpenAI client with VALIDATOR'S credentials
 client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY, timeout=60.0)
 
 # Task configuration
@@ -161,6 +168,21 @@ async def main() -> None:
     6. Aggregate rewards and log results
     """
     log_start(TASK_NAME, BENCHMARK, MODEL_NAME)
+    
+    # CRITICAL: Verify LLM API is accessible through validator's proxy FIRST
+    try:
+        print(f"[DEBUG] Verifying LLM access with API_BASE_URL={API_BASE_URL}", flush=True)
+        test_response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": "Respond with 'ok'"}],
+            temperature=0.3,
+            max_tokens=10,
+            timeout=5.0
+        )
+        print(f"[DEBUG] LLM verification OK - API credentials working", flush=True)
+    except Exception as e:
+        print(f"[DEBUG] LLM verification failed: {type(e).__name__}: {e}", flush=True)
+        print(f"[DEBUG] API_BASE_URL={API_BASE_URL}, API_KEY={'***' if API_KEY else 'EMPTY'}", flush=True)
     
     all_rewards = []
     total_steps = 0
