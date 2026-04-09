@@ -36,11 +36,18 @@ load_dotenv()
 
 # Import OpenEnv client and action types
 try:
-    from client import PiiRedactionEnv
-    from models import PiiRedactionAction
-except ImportError as e:
-    print(f"[DEBUG] Import error: {e}", flush=True)
-    exit(1)
+    # Try absolute imports first (when running as module)
+    from pii_redaction_env.client import PiiRedactionEnv
+    from pii_redaction_env.models import PiiRedactionAction
+except ImportError:
+    try:
+        # Try relative imports (when running as script)
+        from client import PiiRedactionEnv
+        from models import PiiRedactionAction
+    except ImportError as e:
+        print(f"[DEBUG] Import error: {e}", flush=True)
+        print(f"[DEBUG] Make sure client.py and models.py are in the same directory", flush=True)
+        exit(1)
 
 # Environment variables with defaults
 ENV_BASE_URL = os.getenv("ENV_BASE_URL", "http://localhost:8000")
@@ -49,7 +56,12 @@ MODEL_NAME = os.getenv("MODEL_NAME", "HuggingFaceH4/zephyr-7b-beta")
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 
 # Initialize OpenAI client
-client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY or "", timeout=60.0)
+try:
+    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY or "", timeout=60.0)
+except Exception as e:
+    print(f"[DEBUG] OpenAI client initialization warning: {e}", flush=True)
+    # Client will be created on first use if API_KEY becomes available
+    client = None
 
 # Task configuration
 TASK_NAME = "pii_redaction"
@@ -88,7 +100,13 @@ def truncate_action(action_str: str, max_len: int = 100) -> str:
 
 def get_agent_redaction(original_text: str, difficulty: str) -> str:
     """Get redaction from LLM agent via OpenAI client."""
+    global client
+    
     try:
+        # Initialize client if not already done
+        if client is None:
+            client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY or "", timeout=60.0)
+        
         if difficulty == "easy":
             prompt = f"""Redact structured PII: Aadhaar, PAN, phone, email, bank account, IFSC.
 Replace with [REDACTED_TYPE].
@@ -128,6 +146,7 @@ Return only the heavily redacted text."""
         return (response.choices[0].message.content or "").strip()
     except Exception as e:
         print(f"[DEBUG] Agent redaction failed ({difficulty}): {e}", flush=True)
+        # Fallback: return original text when API is unavailable
         return original_text  # Fallback: return original
 
 
@@ -301,4 +320,14 @@ async def main() -> None:
 # ============================================================================
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("[DEBUG] Interrupted by user", flush=True)
+        log_end(False, 0, 0.0, [])
+    except Exception as e:
+        print(f"[ERROR] Fatal error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        log_end(False, 0, 0.0, [])
+        exit(1)
