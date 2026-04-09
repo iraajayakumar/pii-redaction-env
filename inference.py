@@ -71,6 +71,8 @@ client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY, timeout=60.0)
 TASK_NAME = "pii_redaction"
 BENCHMARK = "pii_redaction_env"
 SUCCESS_SCORE_THRESHOLD = 0.5
+MIN_SCORE = 0.01  # Validator requires scores strictly in (0, 1), not endpoints
+MAX_SCORE = 0.99  # Clamp to ensure scores never equal 0.0 or 1.0
 
 # Logging Functions (Hackathon Compliance)
 def log_start(task: str, env: str, model: str) -> None:
@@ -197,16 +199,18 @@ async def main() -> None:
             env_easy = PiiRedactionEnv(base_url=ENV_BASE_URL)
             observation = await env_easy.reset()
             
-            original_text = observation.get("document_text", "")
+            original_text = observation.document_text
             print(f"[DEBUG] Easy task received document ({len(original_text)} chars)", flush=True)
             
             # Agent redaction via OpenAI client
             redacted_text = get_agent_redaction(original_text, "easy")
             
             # Environment step: grading happens inside environment
-            result = await env_easy.step(PiiRedactionAction(redacted_text=redacted_text))
+            # step() returns (observation, reward, done, info) tuple
+            next_obs, reward, done, info = await env_easy.step(PiiRedactionAction(redacted_text=redacted_text))
             
-            reward = result.get("reward", 0.0)
+            # Clamp score to strictly (0, 1) range
+            reward = max(MIN_SCORE, min(MAX_SCORE, reward))
             all_rewards.append(reward)
             total_steps += 1
             
@@ -216,8 +220,8 @@ async def main() -> None:
             
         except Exception as e:
             print(f"[DEBUG] Easy task error: {e}", flush=True)
-            log_step(total_steps + 1, "easy_task_failed", 0.0, True, str(e)[:50])
-            all_rewards.append(0.0)
+            log_step(total_steps + 1, "easy_task_failed", MIN_SCORE, True, str(e)[:50])
+            all_rewards.append(MIN_SCORE)
             total_steps += 1
         finally:
             if env_easy:
@@ -231,16 +235,18 @@ async def main() -> None:
             env_medium = PiiRedactionEnv(base_url=ENV_BASE_URL)
             observation = await env_medium.reset()
             
-            original_text = observation.get("document_text", "")
+            original_text = observation.document_text
             print(f"[DEBUG] Medium task received document ({len(original_text)} chars)", flush=True)
             
             # Agent redaction via OpenAI client (with contextual awareness)
             redacted_text = get_agent_redaction(original_text, "medium")
             
             # Environment step: grading with NER validation
-            result = await env_medium.step(PiiRedactionAction(redacted_text=redacted_text))
+            # step() returns (observation, reward, done, info) tuple
+            next_obs, reward, done, info = await env_medium.step(PiiRedactionAction(redacted_text=redacted_text))
             
-            reward = result.get("reward", 0.0)
+            # Clamp score to strictly (0, 1) range
+            reward = max(MIN_SCORE, min(MAX_SCORE, reward))
             all_rewards.append(reward)
             total_steps += 1
             
@@ -250,8 +256,8 @@ async def main() -> None:
             
         except Exception as e:
             print(f"[DEBUG] Medium task error: {e}", flush=True)
-            log_step(total_steps + 1, "medium_task_failed", 0.0, True, str(e)[:50])
-            all_rewards.append(0.0)
+            log_step(total_steps + 1, "medium_task_failed", MIN_SCORE, True, str(e)[:50])
+            all_rewards.append(MIN_SCORE)
             total_steps += 1
         finally:
             if env_medium:
@@ -265,30 +271,31 @@ async def main() -> None:
             env_hard = PiiRedactionEnv(base_url=ENV_BASE_URL)
             observation = await env_hard.reset()
             
-            original_text = observation.get("document_text", "")
+            original_text = observation.document_text
             print(f"[DEBUG] Hard task received document ({len(original_text)} chars)", flush=True)
             
             # Defense loop: up to 3 attempts to prevent re-identification
-            hard_reward = 0.0
+            hard_reward = MIN_SCORE
             for attempt in range(1, 4):
                 # Agent redaction (increasingly aggressive per attempt)
                 redacted_text = get_agent_redaction(original_text, "hard")
                 
                 # Environment step: judge evaluates re-identifiability
-                result = await env_hard.step(PiiRedactionAction(redacted_text=redacted_text))
+                # step() returns (observation, reward, done, info) tuple
+                next_obs, reward, done, info = await env_hard.step(PiiRedactionAction(redacted_text=redacted_text))
                 
-                reward = result.get("reward", 0.0)
+                # Clamp score to strictly (0, 1) range
+                reward = max(MIN_SCORE, min(MAX_SCORE, reward))
                 hard_reward = reward
                 total_steps += 1
                 
-                is_done = result.get("done", True)
                 action_desc = truncate_action(f"defend_attempt_{attempt}({len(original_text)} chars)")
-                log_step(total_steps, action_desc, reward, is_done, None)
+                log_step(total_steps, action_desc, reward, done, None)
                 
-                print(f"[DEBUG] Hard attempt {attempt}: reward={reward:.3f}, done={is_done}", flush=True)
+                print(f"[DEBUG] Hard attempt {attempt}: reward={reward:.3f}, done={done}", flush=True)
                 
                 # Break if passed or max attempts reached
-                if is_done or attempt >= 3:
+                if done or attempt >= 3:
                     break
             
             all_rewards.append(hard_reward)
@@ -296,8 +303,8 @@ async def main() -> None:
             
         except Exception as e:
             print(f"[DEBUG] Hard task error: {e}", flush=True)
-            log_step(total_steps + 1, "hard_task_failed", 0.0, True, str(e)[:50])
-            all_rewards.append(0.0)
+            log_step(total_steps + 1, "hard_task_failed", MIN_SCORE, True, str(e)[:50])
+            all_rewards.append(MIN_SCORE)
             total_steps += 1
         finally:
             if env_hard:
@@ -311,10 +318,10 @@ async def main() -> None:
             task_rewards = all_rewards[:3]
             episode_score = sum(task_rewards) / 3
         else:
-            episode_score = 0.0
+            episode_score = MIN_SCORE
         
-        # Clamp to [0, 1]
-        episode_score = max(0.0, min(1.0, episode_score))
+        # Clamp to strictly (0, 1) - validator requires scores NOT at endpoints
+        episode_score = max(MIN_SCORE, min(MAX_SCORE, episode_score))
         
         # Success = score >= threshold
         is_success = episode_score >= SUCCESS_SCORE_THRESHOLD
