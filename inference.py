@@ -49,20 +49,15 @@ except ImportError:
         print(f"[DEBUG] Make sure client.py and models.py are in the same directory", flush=True)
         exit(1)
 
-# Environment variables
-# CRITICAL: Use only validator-injected values (no defaults, no fallbacks)
-try:
-    API_BASE_URL = os.environ["API_BASE_URL"]
-    API_KEY = os.environ["API_KEY"]
-except KeyError as e:
-    # Fall back to defaults for local development only
-    API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-    API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN", "")
-
+# Environment variables (template-aligned with validator requirements)
+# Validator injects: API_BASE_URL (proxy URL), API_KEY (authentication)
+# Priority: Use injected values first, fallback to local defaults
+API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN")
 ENV_BASE_URL = os.getenv("ENV_BASE_URL", "http://localhost:8000")
 MODEL_NAME = os.getenv("MODEL_NAME", "HuggingFaceH4/zephyr-7b-beta")
 
-# Initialize OpenAI client with their injected credentials
+# Initialize OpenAI client
 client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY, timeout=60.0)
 
 # Task configuration
