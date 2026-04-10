@@ -145,6 +145,41 @@ async def configure_task(task_type: str) -> Dict[str, Any]:
     return {"status": "ok", "task_type": task_type}
 
 
+# Health check and root endpoints for deployment (HF Space, Docker, etc.)
+@app.get("/")
+async def root() -> Dict[str, str]:
+    """Root endpoint - health check and API info."""
+    return {
+        "status": "running",
+        "service": "pii_redaction_env",
+        "version": "1.0",
+        "description": "PII Redaction Environment - OpenEnv compatible server"
+    }
+
+
+@app.get("/health")
+async def health_check() -> Dict[str, str]:
+    """Health check endpoint for deployment systems (Kubernetes, HF Space, etc.)."""
+    return {"status": "healthy", "service": "pii_redaction_env"}
+
+
+@app.get("/web")
+async def web_redirect() -> Dict[str, str]:
+    """Endpoint for HF Space web UI access."""
+    return {
+        "status": "running",
+        "message": "Web UI is served by OpenEnv framework",
+        "api": {
+            "reset": "POST /reset",
+            "step": "POST /step",
+            "state": "GET /state",
+            "schema": "GET /schema",
+            "ws": "WS /ws",
+            "configure": "POST /configure_task"
+        }
+    }
+
+
 def main(host: str = "0.0.0.0", port: int = 8000):
     """
     Entry point for direct execution via uv run or python -m.
