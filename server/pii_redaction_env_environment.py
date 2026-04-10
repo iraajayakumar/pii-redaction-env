@@ -68,14 +68,10 @@ class PIIRedactionEnvironment(Environment):
                        If None, automatically cycles through tasks (easy → medium → hard).
                        This ensures all 3 task types are tested during validation.
         """
-        if task_type is None:
-            # Auto-cycle through tasks for validation
-            self.task_type = PIIRedactionEnvironment._task_cycle[
-                PIIRedactionEnvironment._cycle_index % 3
-            ]
-            PIIRedactionEnvironment._cycle_index += 1
-        else:
-            self.task_type = task_type
+        # Flag for auto-cycling on each reset() call
+        self._auto_cycle = (task_type is None)
+        # Store task_type, defaulting to "easy" if None
+        self.task_type = task_type or self._task_cycle[0]
         
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._current_task: dict = {}
@@ -92,6 +88,13 @@ class PIIRedactionEnvironment(Environment):
         """
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._done = False
+        
+        # Cycle to next task type on each reset if auto_cycle is enabled
+        if self._auto_cycle:
+            self.task_type = PIIRedactionEnvironment._task_cycle[
+                PIIRedactionEnvironment._cycle_index % 3
+            ]
+            PIIRedactionEnvironment._cycle_index += 1
         
         if self.task_type == "easy":
             self._current_task = get_easy_task()
