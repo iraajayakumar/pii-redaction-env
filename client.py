@@ -25,37 +25,46 @@ class PiiRedactionEnv(
     enabling efficient multi-step interactions with lower latency.
     Each client instance has its own dedicated environment session on the server.
 
+    Supports multiple task types (easy, medium, hard) via task_type parameter.
+
     Example:
-        >>> # Connect to a running server
-        >>> with PiiRedactionEnv(base_url="http://localhost:8000") as client:
-        ...     result = client.reset()
-        ...     print(result.observation.echoed_message)
-        ...
-        ...     result = client.step(PiiRedactionAction(message="Hello!"))
-        ...     print(result.observation.echoed_message)
+        >>> # Connect to a running server and run easy task
+        >>> client = PiiRedactionEnv(base_url="http://localhost:8000", task_type="easy")
+        >>> result = client.reset()
+        >>> result = client.step(PiiRedactionAction(redacted_text="redacted text"))
 
     Example with Docker:
-        >>> # Automatically start container and connect
-        >>> client = PiiRedactionEnv.from_docker_image("pii_redaction_env-env:latest")
-        >>> try:
-        ...     result = client.reset()
-        ...     result = client.step(PiiRedactionAction(message="Test"))
-        ... finally:
-        ...     client.close()
+        >>> client = PiiRedactionEnv.from_docker_image("pii_redaction_env-env:latest", task_type="medium")
+        >>> result = client.reset()
+        >>> result = client.step(PiiRedactionAction(redacted_text="redacted text"))
     """
+
+    def __init__(self, base_url: str = "http://localhost:8000", task_type: str = "easy", **kwargs):
+        """
+        Initialize the PiiRedactionEnv client.
+        
+        Args:
+            base_url: Server URL (default: http://localhost:8000)
+            task_type: Task type - one of "easy", "medium", "hard" (default: "easy")
+            **kwargs: Additional arguments passed to EnvClient
+        """
+        super().__init__(base_url=base_url, **kwargs)
+        self.task_type = task_type
 
     def _step_payload(self, action: PiiRedactionAction) -> Dict:
         """
         Convert PiiRedactionAction to JSON payload for step message.
 
         Args:
-            action: PiiRedactionAction instance
+            action: PiiRedactionAction instance with redacted_text
 
         Returns:
             Dictionary representation suitable for JSON encoding
         """
         return {
-            "message": action.message,
+            "redacted_text": action.redacted_text,
+            "identified_pii_types": action.identified_pii_types,
+            "reasoning": action.reasoning,
         }
 
     def _parse_result(self, payload: Dict) -> StepResult[PiiRedactionObservation]:
@@ -70,11 +79,11 @@ class PiiRedactionEnv(
         """
         obs_data = payload.get("observation", {})
         observation = PiiRedactionObservation(
-            echoed_message=obs_data.get("echoed_message", ""),
-            message_length=obs_data.get("message_length", 0),
-            done=payload.get("done", False),
-            reward=payload.get("reward"),
-            metadata=obs_data.get("metadata", {}),
+            document_text=obs_data.get("document_text", ""),
+            task_type=obs_data.get("task_type", self.task_type),
+            instructions=obs_data.get("instructions", ""),
+            legal_framework=obs_data.get("legal_framework", "DPDP Act 2023"),
+            attempt_number=obs_data.get("attempt_number", 1),
         )
 
         return StepResult(

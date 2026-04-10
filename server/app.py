@@ -46,8 +46,15 @@ except ImportError:
     from server.pii_redaction_env_environment import PIIRedactionEnvironment
 
 # Create the app with web interface and README integration
+# Factory function that creates environments with task_type support
+def pii_env_factory(task_type: str = "easy", **kwargs) -> PIIRedactionEnvironment:
+    """Factory function to create PIIRedactionEnvironment with task_type support."""
+    env_task_type = task_type
+    # Check for task_type in query params or context
+    return PIIRedactionEnvironment(task_type=env_task_type)
+
 app = create_app(
-    PIIRedactionEnvironment,
+    lambda **kwargs: PIIRedactionEnvironment(task_type=kwargs.get("task_type", "easy")),
     PIIAction,
     PIIObservation,
     env_name="pii_redaction_env",

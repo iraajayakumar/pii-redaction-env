@@ -78,6 +78,12 @@ class PIIRedactionEnvironment(Environment):
         Returns:
             PIIObservation containing the document and instructions.
         """
+        # Allow task type to be overridden by environment variable for validator
+        import os
+        env_task_type = os.getenv("TASK_TYPE")
+        if env_task_type in ["easy", "medium", "hard"]:
+            self.task_type = env_task_type
+        
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._done = False
         

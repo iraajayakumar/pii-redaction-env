@@ -196,7 +196,7 @@ async def main() -> None:
         env_easy = None
         try:
             print(f"[DEBUG] Connecting to environment at {ENV_BASE_URL}", flush=True)
-            env_easy = PiiRedactionEnv(base_url=ENV_BASE_URL)
+            env_easy = PiiRedactionEnv(base_url=ENV_BASE_URL, task_type="easy")
             observation = await env_easy.reset()
             
             original_text = observation.document_text
@@ -232,7 +232,7 @@ async def main() -> None:
         # ====================================================================
         env_medium = None
         try:
-            env_medium = PiiRedactionEnv(base_url=ENV_BASE_URL)
+            env_medium = PiiRedactionEnv(base_url=ENV_BASE_URL, task_type="medium")
             observation = await env_medium.reset()
             
             original_text = observation.document_text
@@ -268,7 +268,7 @@ async def main() -> None:
         # ====================================================================
         env_hard = None
         try:
-            env_hard = PiiRedactionEnv(base_url=ENV_BASE_URL)
+            env_hard = PiiRedactionEnv(base_url=ENV_BASE_URL, task_type="hard")
             observation = await env_hard.reset()
             
             original_text = observation.document_text
