@@ -60,19 +60,13 @@ class PIIRedactionEnvironment(Environment):
     _task_cycle = ["easy", "medium", "hard"]
     _cycle_index = 0
 
-    def __init__(self, task_type: str = None):
+    def __init__(self, task_type: str = "easy"):
         """
         Initialize the pii_redaction_env environment.
         Args:
-            task_type: One of "easy", "medium", "hard", or None.
-                       If None, automatically cycles through tasks (easy → medium → hard).
-                       This ensures all 3 task types are tested during validation.
+            task_type: One of "easy", "medium", "hard". Defaults to "easy".
         """
-        # Flag for auto-cycling on each reset() call
-        self._auto_cycle = (task_type is None)
-        # Store task_type, defaulting to "easy" if None
-        self.task_type = task_type or self._task_cycle[0]
-        
+        self.task_type = task_type
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._current_task: dict = {}
         self._done: bool = False
@@ -88,13 +82,6 @@ class PIIRedactionEnvironment(Environment):
         """
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._done = False
-        
-        # Cycle to next task type on each reset if auto_cycle is enabled
-        if self._auto_cycle:
-            self.task_type = PIIRedactionEnvironment._task_cycle[
-                PIIRedactionEnvironment._cycle_index % 3
-            ]
-            PIIRedactionEnvironment._cycle_index += 1
         
         if self.task_type == "easy":
             self._current_task = get_easy_task()
