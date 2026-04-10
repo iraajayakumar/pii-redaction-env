@@ -195,8 +195,9 @@ async def main() -> None:
         # ====================================================================
         env_easy = None
         try:
-            print(f"[DEBUG] Connecting to environment at {ENV_BASE_URL}", flush=True)
-            env_easy = PiiRedactionEnv(base_url=ENV_BASE_URL, task_type="easy")
+            print(f"[DEBUG] Connecting to easy environment at {ENV_BASE_URL}", flush=True)
+            os.environ["TASK_TYPE"] = "easy"
+            env_easy = PiiRedactionEnv(base_url=ENV_BASE_URL)
             observation = await env_easy.reset()
             
             original_text = observation.document_text
@@ -232,7 +233,9 @@ async def main() -> None:
         # ====================================================================
         env_medium = None
         try:
-            env_medium = PiiRedactionEnv(base_url=ENV_BASE_URL, task_type="medium")
+            print(f"[DEBUG] Connecting to medium environment at {ENV_BASE_URL}", flush=True)
+            os.environ["TASK_TYPE"] = "medium"
+            env_medium = PiiRedactionEnv(base_url=ENV_BASE_URL)
             observation = await env_medium.reset()
             
             original_text = observation.document_text
@@ -268,7 +271,9 @@ async def main() -> None:
         # ====================================================================
         env_hard = None
         try:
-            env_hard = PiiRedactionEnv(base_url=ENV_BASE_URL, task_type="hard")
+            print(f"[DEBUG] Connecting to hard environment at {ENV_BASE_URL}", flush=True)
+            os.environ["TASK_TYPE"] = "hard"
+            env_hard = PiiRedactionEnv(base_url=ENV_BASE_URL)
             observation = await env_hard.reset()
             
             original_text = observation.document_text

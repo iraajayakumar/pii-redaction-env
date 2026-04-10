@@ -60,12 +60,17 @@ class PIIRedactionEnvironment(Environment):
     _task_cycle = ["easy", "medium", "hard"]
     _cycle_index = 0
 
-    def __init__(self, task_type: str = "easy"):
+    def __init__(self, task_type: str = None):
         """
         Initialize the pii_redaction_env environment.
         Args:
-            task_type: One of "easy", "medium", "hard". Defaults to "easy".
+            task_type: One of "easy", "medium", "hard". If None, reads from TASK_TYPE env var.
+                       Defaults to "easy" if not specified.
         """
+        import os
+        # Allow task_type to be specified via environment variable for inference flexibility
+        if task_type is None:
+            task_type = os.getenv("TASK_TYPE", "easy")
         self.task_type = task_type
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._current_task: dict = {}
