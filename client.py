@@ -6,6 +6,7 @@
 
 """Pii Redaction Env Environment Client."""
 
+import os
 from typing import Dict
 
 from openenv.core import EnvClient
@@ -48,8 +49,42 @@ class PiiRedactionEnv(
             task_type: Task type - one of "easy", "medium", "hard" (default: "easy")
             **kwargs: Additional arguments passed to EnvClient
         """
+        # CRITICAL: Set environment variable for server-side task type detection
+        # This ensures that when the server's environment is created, it knows which task to use
+        os.environ["TASK_TYPE"] = task_type
+        
         super().__init__(base_url=base_url, **kwargs)
         self.task_type = task_type
+        self._base_url = base_url
+        
+        # Ensure task_type is configured on server immediately
+        # This works even if client and server are in separate processes
+        self._configure_task_on_server()
+
+    def _configure_task_on_server(self) -> None:
+        """
+        Configure task_type on the server before any reset() calls.
+        
+        This ensures the server knows which task to use when creating the environment,
+        even if client and server are in separate processes (e.g., Docker).
+        """
+        try:
+            import requests
+            # Make explicit HTTP call to configure server
+            configure_url = f"{self._base_url.rstrip('/')}/configure_task"
+            response = requests.post(
+                configure_url,
+                params={"task_type": self.task_type},
+                timeout=5
+            )
+            if response.status_code not in (200, 201):
+                # Configuration endpoint might not exist on older servers
+                # This is OK - fall back to environment variable
+                print(f"[DEBUG] Config endpoint returned {response.status_code}, using env var fallback", flush=True)
+        except Exception as e:
+            # Configuration endpoint doesn't exist or server is not reachable yet
+            # The environment variable fallback will be used instead
+            print(f"[DEBUG] Failed to configure task_type on server: {e}", flush=True)
 
     def _step_payload(self, action: PiiRedactionAction) -> Dict:
         """
