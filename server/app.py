@@ -163,23 +163,6 @@ async def health_check() -> Dict[str, str]:
     return {"status": "healthy", "service": "pii_redaction_env"}
 
 
-@app.get("/web")
-async def web_redirect() -> Dict[str, str]:
-    """Endpoint for HF Space web UI access."""
-    return {
-        "status": "running",
-        "message": "Web UI is served by OpenEnv framework",
-        "api": {
-            "reset": "POST /reset",
-            "step": "POST /step",
-            "state": "GET /state",
-            "schema": "GET /schema",
-            "ws": "WS /ws",
-            "configure": "POST /configure_task"
-        }
-    }
-
-
 def main(host: str = "0.0.0.0", port: int = 8000):
     """
     Entry point for direct execution via uv run or python -m.
