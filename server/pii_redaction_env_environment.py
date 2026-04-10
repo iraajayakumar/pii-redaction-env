@@ -55,16 +55,28 @@ class PIIRedactionEnvironment(Environment):
     # When True, multiple WebSocket clients can connect simultaneously, each
     # getting their own environment instance (when using factory mode in app.py).
     SUPPORTS_CONCURRENT_SESSIONS: bool = True
+    
+    # Task cycling for validation: ensures all 3 task types are tested
+    _task_cycle = ["easy", "medium", "hard"]
+    _cycle_index = 0
 
-    def __init__(self, task_type: str = "easy"):
+    def __init__(self, task_type: str = None):
         """
         Initialize the pii_redaction_env environment.
         Args:
-            task_type: One of "easy", "medium", "hard".
-                       Defaults to "easy" so the environment works
-                       out of the box without configuration.
+            task_type: One of "easy", "medium", "hard", or None.
+                       If None, automatically cycles through tasks (easy → medium → hard).
+                       This ensures all 3 task types are tested during validation.
         """
-        self.task_type = task_type
+        if task_type is None:
+            # Auto-cycle through tasks for validation
+            self.task_type = PIIRedactionEnvironment._task_cycle[
+                PIIRedactionEnvironment._cycle_index % 3
+            ]
+            PIIRedactionEnvironment._cycle_index += 1
+        else:
+            self.task_type = task_type
+        
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._current_task: dict = {}
         self._done: bool = False
@@ -78,12 +90,6 @@ class PIIRedactionEnvironment(Environment):
         Returns:
             PIIObservation containing the document and instructions.
         """
-        # Allow task type to be overridden by environment variable for validator
-        import os
-        env_task_type = os.getenv("TASK_TYPE")
-        if env_task_type in ["easy", "medium", "hard"]:
-            self.task_type = env_task_type
-        
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._done = False
         
