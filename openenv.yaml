@@ -2,13 +2,15 @@ spec_version: 1
 name: pii-redaction-env
 version: "0.1.0"
 description: >
-  An RL environment where an AI agent acts as an automated Data Privacy Officer,
-  redacting PII from Indian documents under the DPDP Act 2023.
-  Supports three difficulty levels: easy, medium, hard.
+  An OpenEnv RL environment where an AI agent acts as an automated Data Privacy Officer,
+  redacting sensitive Indian documents under the DPDP Act 2023.
 type: space
 runtime: fastapi
 app: server.app:app
 port: 8000
+
+author: Iraa Jayakumar
+
 tags:
   - openenv
   - privacy
@@ -16,14 +18,19 @@ tags:
   - compliance
   - india
   - dpdp
-author: Iraa Jayakumar
+
 tasks:
   - name: easy
-    description: Direct PII detection — Aadhaar, PAN, phone, email, bank account, IFSC
+    description: Direct PII detection for Aadhaar, PAN, phone, email, bank account, and IFSC.
     difficulty: easy
+    grader: server.graders.easy_grader:grade_easy_task
+
   - name: medium
-    description: Contextual PII in medical and legal documents
+    description: Contextual and implicit PII redaction in Indian medical and legal documents.
     difficulty: medium
+    grader: server.graders.medium_grader:grade_medium_task
+
   - name: hard
-    description: Adversarial de-anonymisation resistance
+    description: Adversarial privacy defense against re-identification and de-anonymisation attacks.
     difficulty: hard
+    grader: server.graders.hard_grader:grade_hard_task
