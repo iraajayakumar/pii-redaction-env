@@ -16,10 +16,10 @@ except ImportError:
     from models import PiiRedactionAction
 
 
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY", "dummy")
-API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "HuggingFaceH4/zephyr-7b-beta")
-ENV_BASE_URL = os.getenv("ENV_BASE_URL", "http://localhost:8000")
+API_KEY = os.environ["API_KEY"]
+API_BASE_URL = os.environ["API_BASE_URL"]
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
+ENV_BASE_URL = os.getenv("ENV_BASE_URL", "http://0.0.0.0:8000")
 
 TASKS = ["easy", "medium", "hard"]
 BENCHMARK = "pii_redaction_env"
