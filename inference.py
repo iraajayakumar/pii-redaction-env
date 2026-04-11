@@ -3,10 +3,7 @@ import os
 import textwrap
 from typing import List, Optional
 
-from dotenv import load_dotenv
 from openai import OpenAI
-
-load_dotenv()
 
 try:
     from pii_redaction_env.client import PiiRedactionEnv
@@ -16,8 +13,10 @@ except ImportError:
     from models import PiiRedactionAction
 
 
-API_KEY = os.environ["API_KEY"]
-API_BASE_URL = os.environ["API_BASE_URL"]
+# Use validator's injected environment variables (must follow their template exactly)
+# Do NOT use load_dotenv() as it would override validator's injected values with local .env
+API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN")
+API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
 ENV_BASE_URL = os.getenv("ENV_BASE_URL", "http://0.0.0.0:8000")
 
