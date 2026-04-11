@@ -116,6 +116,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 })
     except WebSocketDisconnect:
         pass
+    
+@app.get("/health")
+async def health_check():
+    """Health check endpoint required by validator."""
+    return {"status": "healthy", "environment": "pii_redaction_env"}
 
 def main(host: str = "0.0.0.0", port: int = 8000):
     uvicorn.run(app, host=host, port=port)
