@@ -3,8 +3,8 @@ import os
 import textwrap
 from typing import List, Optional
 
-from openai import OpenAI
 from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
 
@@ -16,7 +16,7 @@ except ImportError:
     from models import PiiRedactionAction
 
 
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
+API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY", "dummy")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "HuggingFaceH4/zephyr-7b-beta")
 ENV_BASE_URL = os.getenv("ENV_BASE_URL", "http://localhost:8000")
@@ -29,15 +29,19 @@ TEMPERATURE = 0.2
 MAX_TOKENS = 1800
 
 
+def one_line(value: Optional[str]) -> str:
+    if not value:
+        return "null"
+    return " ".join(str(value).split())
+
+
 def log_start(task: str, env: str, model: str) -> None:
-    print(f"[START] task={task} env={env} model={model}", flush=True)
+    print(f"[START] task={one_line(task)} env={one_line(env)} model={one_line(model)}", flush=True)
 
 
 def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
-    error_val = error if error else "null"
-    done_val = str(done).lower()
     print(
-        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
+        f"[STEP] step={step} action={one_line(action)} reward={reward:.2f} done={str(done).lower()} error={one_line(error)}",
         flush=True,
     )
 
@@ -45,20 +49,28 @@ def log_step(step: int, action: str, reward: float, done: bool, error: Optional[
 def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(
-        f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}",
+        f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={rewards_str}",
         flush=True,
     )
 
 
 def truncate_action(action_str: str, max_len: int = 120) -> str:
-    flat = " ".join(action_str.split())
+    flat = one_line(action_str)
     if len(flat) > max_len:
         return flat[: max_len - 3] + "..."
     return flat
 
 
-def build_prompt(task_name: str, document_text: str, prior_feedback: str = "", attempt: int = 1) -> str:
-    if task_name == "easy":
+def build_prompt(
+    task_name: str,
+    document_text: str,
+    task_instructions: str = "",
+    prior_feedback: str = "",
+    attempt: int = 1,
+) -> str:
+    if task_instructions:
+        instructions = task_instructions.strip()
+    elif task_name == "easy":
         instructions = """
 Redact all structured Indian PII from the document.
 
@@ -125,10 +137,17 @@ def get_agent_redaction(
     client: OpenAI,
     task_name: str,
     document_text: str,
+    task_instructions: str = "",
     prior_feedback: str = "",
     attempt: int = 1,
 ) -> str:
-    user_prompt = build_prompt(task_name, document_text, prior_feedback, attempt)
+    user_prompt = build_prompt(
+        task_name=task_name,
+        document_text=document_text,
+        task_instructions=task_instructions,
+        prior_feedback=prior_feedback,
+        attempt=attempt,
+    )
     try:
         completion = client.chat.completions.create(
             model=MODEL_NAME,
@@ -150,7 +169,6 @@ def get_agent_redaction(
 
 
 async def run_single_task(client: OpenAI, task_name: str) -> tuple[int, List[float], float, bool]:
-    os.environ["TASK_TYPE"] = task_name
     env = PiiRedactionEnv(base_url=ENV_BASE_URL)
 
     rewards: List[float] = []
@@ -161,8 +179,10 @@ async def run_single_task(client: OpenAI, task_name: str) -> tuple[int, List[flo
     log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
 
     try:
-        observation = await env.reset()
+        reset_result = await env.reset()
+        observation = reset_result.observation
         current_text = observation.document_text
+        task_instructions = observation.instructions or ""
         feedback = ""
 
         max_steps = 1 if task_name in ("easy", "medium") else MAX_HARD_STEPS
@@ -172,11 +192,12 @@ async def run_single_task(client: OpenAI, task_name: str) -> tuple[int, List[flo
                 client=client,
                 task_name=task_name,
                 document_text=current_text,
+                task_instructions=task_instructions,
                 prior_feedback=feedback,
                 attempt=step,
             )
 
-            next_obs, reward, done, info = await env.step(
+            step_result = await env.step(
                 PiiRedactionAction(
                     redacted_text=action_text,
                     identified_pii_types=[],
@@ -184,7 +205,11 @@ async def run_single_task(client: OpenAI, task_name: str) -> tuple[int, List[flo
                 )
             )
 
-            reward = max(0.0, min(1.0, float(reward or 0.0)))
+            next_obs = step_result.observation
+            reward = max(0.0, min(1.0, float(step_result.reward or 0.0)))
+            done = bool(step_result.done)
+            info = getattr(next_obs, "metadata", {}) or {}
+
             rewards.append(reward)
             steps_taken = step
 
@@ -204,19 +229,32 @@ async def run_single_task(client: OpenAI, task_name: str) -> tuple[int, List[flo
                 break
 
         final_score = rewards[-1] if rewards else 0.0
+        final_score = max(0.0, min(1.0, final_score))
         success = final_score >= SUCCESS_SCORE_THRESHOLD
+        return steps_taken, rewards, final_score, success
+
+    except Exception as e:
+        final_score = 0.0
+        success = False
+        log_step(
+            step=max(steps_taken, 1),
+            action="exception",
+            reward=0.0,
+            done=True,
+            error=str(e),
+        )
         return steps_taken, rewards, final_score, success
 
     finally:
         try:
             await env.close()
-        finally:
-            log_end(success=success, steps=steps_taken, score=final_score, rewards=rewards)
+        except Exception:
+            pass
+        log_end(success=success, steps=steps_taken, score=final_score, rewards=rewards)
 
 
 async def main() -> None:
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-
     for task_name in TASKS:
         await run_single_task(client, task_name)
 

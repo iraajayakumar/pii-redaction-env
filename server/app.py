@@ -1,81 +1,124 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
+# server/app.py - FULL REPLACEMENT
 """
-FastAPI application for the Pii Redaction Env Environment.
-
-This module creates an HTTP server that exposes the PiiRedactionEnvironment
-over HTTP and WebSocket endpoints, compatible with EnvClient.
-
-Endpoints:
-    - POST /reset: Reset the environment
-    - POST /step: Execute an action
-    - GET /state: Get current environment state
-    - GET /schema: Get action/observation schemas
-    - WS /ws: WebSocket endpoint for persistent sessions
-
-Usage:
-    # Development (with auto-reload):
-    uvicorn server.app:app --reload --host 0.0.0.0 --port 8000
-
-    # Production:
-    uvicorn server.app:app --host 0.0.0.0 --port 8000 --workers 4
-
-    # Or run directly:
-    python -m server.app
+Custom FastAPI app with task parameter forwarding for PII Redaction Env.
 """
 
-try:
-    from openenv.core.env_server.http_server import create_app
-except Exception as e:  # pragma: no cover
-    raise ImportError(
-        "openenv is required for the web interface. Install dependencies with '\n    uv sync\n'"
-    ) from e
+from fastapi import FastAPI, Body, Query, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
+import uvicorn
+import asyncio
+from typing import Optional, Dict, Any
+from pydantic import BaseModel
 
 try:
     from ..models import PIIAction, PIIObservation
     from .pii_redaction_env_environment import PIIRedactionEnvironment
 except ImportError:
-    import sys
-    import os
+    import sys, os
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from models import PIIAction, PIIObservation
     from server.pii_redaction_env_environment import PIIRedactionEnvironment
 
-# Create the app with web interface and README integration
-app = create_app(
-    PIIRedactionEnvironment,
-    PIIAction,
-    PIIObservation,
-    env_name="pii_redaction_env",
-    max_concurrent_envs=1,  # increase this number to allow more concurrent WebSocket sessions
-)
+app = FastAPI(title="PII Redaction Environment")
 
+# Single global environment instance (max_concurrent_envs=1)
+env = PIIRedactionEnvironment(task_type=None)  # Will use cycling/default
+
+class ResetRequest(BaseModel):
+    task: Optional[str] = None
+
+class StepRequest(BaseModel):
+    action: dict
+
+@app.post("/reset")
+async def reset_endpoint(
+    body: Optional[ResetRequest] = Body(default=None),
+    task: Optional[str] = Query(default=None),
+):
+    selected_task = task or (body.task if body else None)
+    obs = env.reset(task=selected_task)
+    return {
+        "observation": obs.model_dump(),
+        "reward": None,
+        "done": False
+    }
+
+@app.post("/step")
+async def step_endpoint(request: StepRequest = Body(...)):
+    """Execute action with flexible field mapping."""
+    action_dict = request.action.copy()
+    
+    # Handle both field name variants for maximum compatibility
+    field_mapping = {
+        "redacted_document": "redacted_text",
+        "redacted_text": "redacted_text"
+    }
+    
+    # Remap fields if needed
+    for old_name, new_name in field_mapping.items():
+        if old_name in action_dict and old_name != new_name:
+            action_dict[new_name] = action_dict.pop(old_name)
+    
+    action = PIIAction(**action_dict)
+    obs, reward, done = env.step(action)
+    return {
+        "observation": obs.model_dump(),
+        "reward": reward,
+        "done": done
+    }
+
+@app.get("/state")
+async def state_endpoint():
+    """Get current environment state."""
+    state = env.state
+    return {
+        "episode_id": state.episode_id,
+        "step_count": state.step_count
+    }
+
+@app.get("/schema")
+async def schema_endpoint():
+    """Return action/observation schemas."""
+    return {
+        "action_schema": PIIAction.model_json_schema(),
+        "observation_schema": PIIObservation.model_json_schema()
+    }
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for persistent sessions."""
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_json()
+            if data.get("method") == "reset":
+                task = data.get("params", {}).get("task")
+                obs = env.reset(task=task)
+                await websocket.send_json({
+                    "observation": obs.model_dump(),
+                    "reward": None,
+                    "done": False
+                })
+            elif data.get("method") == "step":
+                action_dict = data["params"]["action"]
+                action = PIIAction(**action_dict)
+                obs = env.step(action)
+                await websocket.send_json({
+                    "observation": obs.model_dump(),
+                    "reward": obs.reward,
+                    "done": obs.done
+                })
+            elif data.get("method") == "state":
+                state = env.state
+                await websocket.send_json({
+                    "episode_id": state.episode_id,
+                    "step_count": state.step_count
+                })
+    except WebSocketDisconnect:
+        pass
 
 def main(host: str = "0.0.0.0", port: int = 8000):
-    """
-    Entry point for direct execution via uv run or python -m.
-
-    This function enables running the server without Docker:
-        uv run --project . server
-        uv run --project . server --port 8001
-        python -m pii_redaction_env.server.app
-
-    Args:
-        host: Host address to bind to (default: "0.0.0.0")
-        port: Port number to listen on (default: 8000)
-
-    For production deployments, consider using uvicorn directly with
-    multiple workers:
-        uvicorn pii_redaction_env.server.app:app --workers 4
-    """
-    import uvicorn
-
     uvicorn.run(app, host=host, port=port)
-
 
 if __name__ == "__main__":
     main()

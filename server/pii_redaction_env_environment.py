@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import os
 from uuid import uuid4
-from typing import Dict, Any, ClassVar, List
+from typing import Dict, Any, ClassVar, List, Optional
 
 from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import State
@@ -32,9 +32,7 @@ class PIIRedactionEnvironment(Environment):
     - medium
     - hard
 
-    Validation-friendly behavior:
-    - If task_type is explicitly provided (constructor or env var), use it.
-    - If not provided, cycle across easy -> medium -> hard for successive episodes.
+    FIXED: Now properly handles /reset?task=<type> query parameters for validator.
     """
 
     SUPPORTS_CONCURRENT_SESSIONS: bool = True
@@ -62,9 +60,16 @@ class PIIRedactionEnvironment(Environment):
         cls._cycle_index += 1
         return task
 
-    def _resolve_task_type(self) -> str:
+    def _resolve_task_type(self, task_param: Optional[str] = None) -> str:
+        # PRIORITY 1: Explicit task parameter from /reset?task=
+        if task_param and task_param in self.AVAILABLE_TASKS:
+            return task_param
+            
+        # PRIORITY 2: Constructor/env var task_type
         if self.task_type in self.AVAILABLE_TASKS:
             return self.task_type
+            
+        # PRIORITY 3: Cycle through tasks
         return self._next_task_type()
 
     def _load_task(self, task_type: str) -> Dict[str, Any]:
@@ -76,11 +81,12 @@ class PIIRedactionEnvironment(Environment):
             return get_hard_task()
         raise ValueError(f"Unknown task_type '{task_type}'")
 
-    def reset(self) -> PIIObservation:
+    def reset(self, task: Optional[str] = None) -> PIIObservation:  # ← FIXED: Added task param
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._done = False
 
-        self._selected_task_type = self._resolve_task_type()
+        # FIXED: Now accepts and prioritizes task= query parameter
+        self._selected_task_type = self._resolve_task_type(task_param=task)
         self._current_task = self._load_task(self._selected_task_type)
 
         return PIIObservation(
