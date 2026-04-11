@@ -1,9 +1,14 @@
+spec_version: 1
 name: pii-redaction-env
 version: "0.1.0"
 description: >
   An RL environment where an AI agent acts as an automated Data Privacy Officer,
   redacting PII from Indian documents under the DPDP Act 2023.
   Supports three difficulty levels: easy, medium, hard.
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
 tags:
   - openenv
   - privacy
