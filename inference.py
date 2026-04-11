@@ -195,10 +195,12 @@ async def main() -> None:
         # ====================================================================
         env_easy = None
         try:
-            print(f"[DEBUG] Connecting to easy environment at {ENV_BASE_URL}", flush=True)
+            print(f"[DEBUG_INF] Creating easy environment with TASK_TYPE='easy'", flush=True)
             os.environ["TASK_TYPE"] = "easy"
             env_easy = PiiRedactionEnv(base_url=ENV_BASE_URL)
+            print(f"[DEBUG_INF] Easy environment created", flush=True)
             observation = await env_easy.reset()
+            print(f"[DEBUG_INF] Easy reset() completed, task_type={observation.task_type}", flush=True)
             
             original_text = observation.document_text
             print(f"[DEBUG] Easy task received document ({len(original_text)} chars)", flush=True)
@@ -233,10 +235,12 @@ async def main() -> None:
         # ====================================================================
         env_medium = None
         try:
-            print(f"[DEBUG] Connecting to medium environment at {ENV_BASE_URL}", flush=True)
+            print(f"[DEBUG_INF] Creating medium environment with TASK_TYPE='medium'", flush=True)
             os.environ["TASK_TYPE"] = "medium"
             env_medium = PiiRedactionEnv(base_url=ENV_BASE_URL)
+            print(f"[DEBUG_INF] Medium environment created", flush=True)
             observation = await env_medium.reset()
+            print(f"[DEBUG_INF] Medium reset() completed, task_type={observation.task_type}", flush=True)
             
             original_text = observation.document_text
             print(f"[DEBUG] Medium task received document ({len(original_text)} chars)", flush=True)
@@ -271,10 +275,12 @@ async def main() -> None:
         # ====================================================================
         env_hard = None
         try:
-            print(f"[DEBUG] Connecting to hard environment at {ENV_BASE_URL}", flush=True)
+            print(f"[DEBUG_INF] Creating hard environment with TASK_TYPE='hard'", flush=True)
             os.environ["TASK_TYPE"] = "hard"
             env_hard = PiiRedactionEnv(base_url=ENV_BASE_URL)
+            print(f"[DEBUG_INF] Hard environment created", flush=True)
             observation = await env_hard.reset()
+            print(f"[DEBUG_INF] Hard reset() completed, task_type={observation.task_type}", flush=True)
             
             original_text = observation.document_text
             print(f"[DEBUG] Hard task received document ({len(original_text)} chars)", flush=True)
@@ -332,6 +338,8 @@ async def main() -> None:
         is_success = episode_score >= SUCCESS_SCORE_THRESHOLD
         
         print(f"[DEBUG] Final: score={episode_score:.3f}, success={is_success}, steps={total_steps}", flush=True)
+        print(f"[DEBUG_SUMMARY] Rewards collected: {all_rewards}, len={len(all_rewards)}", flush=True)
+        print(f"[DEBUG_SUMMARY] Graders invoked: {len([r for r in all_rewards if r > 0])} (non-zero rewards)", flush=True)
         
     except Exception as e:
         print(f"[ERROR] Main loop failed: {e}", flush=True)

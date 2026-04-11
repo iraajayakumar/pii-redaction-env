@@ -64,14 +64,15 @@ class PIIRedactionEnvironment(Environment):
         """
         Initialize the pii_redaction_env environment.
         Args:
-            task_type: One of "easy", "medium", "hard". If None, reads from TASK_TYPE env var.
-                       Defaults to "easy" if not specified.
+            task_type: One of 'easy', 'medium', 'hard'. If None, reads from TASK_TYPE env var.
+                       Defaults to 'easy' if not specified.
         """
         import os
         # Allow task_type to be specified via environment variable for inference flexibility
         if task_type is None:
-            task_type = os.getenv("TASK_TYPE", "easy")
+            task_type = os.getenv('TASK_TYPE', 'easy')
         self.task_type = task_type
+        print(f'[DEBUG_ENV] PIIRedactionEnvironment.__init__: task_type={self.task_type}', flush=True)
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._current_task: dict = {}
         self._done: bool = False
@@ -87,12 +88,13 @@ class PIIRedactionEnvironment(Environment):
         """
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._done = False
+        print(f'[DEBUG_ENV] reset() called: task_type={self.task_type}, episode_id={self._state.episode_id}', flush=True)
         
-        if self.task_type == "easy":
+        if self.task_type == 'easy':
             self._current_task = get_easy_task()
-        elif self.task_type == "medium":
+        elif self.task_type == 'medium':
             self._current_task = get_medium_task()
-        elif self.task_type == "hard":
+        elif self.task_type == 'hard':
             self._current_task = get_hard_task()
         else:
             raise ValueError(
@@ -142,34 +144,40 @@ class PIIRedactionEnvironment(Environment):
             )
             
         # --- Grade the action based on task type ---
-        if self.task_type == "easy":
+        if self.task_type == 'easy':
+            print(f'[DEBUG_ENV] Calling grade_easy_task', flush=True)
             result = grade_easy_task(
-                original_text=self._current_task["document_text"],
+                original_text=self._current_task['document_text'],
                 redacted_text=action.redacted_text,
-                pii_present=self._current_task["pii_present"],
+                pii_present=self._current_task['pii_present'],
             )
+            print(f'[DEBUG_ENV] grade_easy_task returned: score={result.get("score")}', flush=True)
             self._done = True
             # Easy task is single-step — one attempt, episode over.
 
-        elif self.task_type == "medium":
+        elif self.task_type == 'medium':
+            print(f'[DEBUG_ENV] Calling grade_medium_task', flush=True)
             result = grade_medium_task(
-                original_text=self._current_task["document_text"],
+                original_text=self._current_task['document_text'],
                 redacted_text=action.redacted_text,
-                pii_present=self._current_task["pii_present"],
+                pii_present=self._current_task['pii_present'],
             )
+            print(f'[DEBUG_ENV] grade_medium_task returned: score={result.get("score")}', flush=True)
             self._done = True
             # Medium task is also single-step.
 
-        elif self.task_type == "hard":
+        elif self.task_type == 'hard':
+            print(f'[DEBUG_ENV] Calling grade_hard_task', flush=True)
             result = grade_hard_task(
-                original_text=self._current_task["document_text"],
+                original_text=self._current_task['document_text'],
                 redacted_text=action.redacted_text,
-                pii_present=self._current_task["pii_present"],
+                pii_present=self._current_task['pii_present'],
                 attempt_number=self._state.step_count,
             )
+            print(f'[DEBUG_ENV] grade_hard_task returned: score={result.get("score")}', flush=True)
             # Hard task uses step_count to know which attempt this is.
             # The grader decides whether to end the episode.
-            self._done = result.get("episode_done", True)
+            self._done = result.get('episode_done', True)
             # result["episode_done"] lets the hard grader control
             # whether to give the agent another attempt.
             # Default True means single-step unless grader says otherwise.
