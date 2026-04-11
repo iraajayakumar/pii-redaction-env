@@ -3,20 +3,23 @@ import os
 import textwrap
 from typing import List, Optional
 
+from dotenv import load_dotenv
 from openai import OpenAI
+
+load_dotenv()
 
 try:
     from pii_redaction_env.client import PiiRedactionEnv
-    from pii_redaction_env.models import PIIAction
+    from pii_redaction_env.models import PiiRedactionAction
 except ImportError:
     from client import PiiRedactionEnv
-    from models import PIIAction
+    from models import PiiRedactionAction
 
 
-API_BASE_URL = os.environ["API_BASE_URL"]
 API_KEY = os.environ["API_KEY"]
-MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o-mini")
-ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://0.0.0.0:8000")
+API_BASE_URL = os.environ["API_BASE_URL"]
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
+ENV_BASE_URL = os.getenv("ENV_BASE_URL", "http://0.0.0.0:8000")
 
 TASKS = ["easy", "medium", "hard"]
 BENCHMARK = "pii_redaction_env"
@@ -26,19 +29,19 @@ TEMPERATURE = 0.2
 MAX_TOKENS = 1800
 
 
-def oneline(value: Optional[str]) -> str:
+def one_line(value: Optional[str]) -> str:
     if not value:
         return "null"
     return " ".join(str(value).split())
 
 
 def log_start(task: str, env: str, model: str) -> None:
-    print(f"[START] task={oneline(task)} env={oneline(env)} model={oneline(model)}", flush=True)
+    print(f"[START] task={one_line(task)} env={one_line(env)} model={one_line(model)}", flush=True)
 
 
 def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
     print(
-        f"[STEP] step={step} action={oneline(action)} reward={reward:.2f} done={str(done).lower()} error={oneline(error)}",
+        f"[STEP] step={step} action={one_line(action)} reward={reward:.2f} done={str(done).lower()} error={one_line(error)}",
         flush=True,
     )
 
@@ -52,7 +55,7 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> No
 
 
 def truncate_action(action_str: str, max_len: int = 120) -> str:
-    flat = oneline(action_str)
+    flat = one_line(action_str)
     if len(flat) > max_len:
         return flat[: max_len - 3] + "..."
     return flat
@@ -65,14 +68,19 @@ def build_prompt(
     prior_feedback: str = "",
     attempt: int = 1,
 ) -> str:
-    if task_instructions and task_instructions.strip():
+    if task_instructions:
         instructions = task_instructions.strip()
     elif task_name == "easy":
         instructions = """
 Redact all structured Indian PII from the document.
 
 Use only these exact tags when appropriate:
-REDACTED_AADHAAR, REDACTED_PAN, REDACTED_PHONE, REDACTED_EMAIL, REDACTED_BANKACCOUNT, REDACTED_IFSC
+[REDACTED_AADHAAR]
+[REDACTED_PAN]
+[REDACTED_PHONE]
+[REDACTED_EMAIL]
+[REDACTED_BANK_ACCOUNT]
+[REDACTED_IFSC]
 
 Rules:
 - Replace PII with the correct tag.
@@ -85,7 +93,13 @@ Rules:
 Redact all direct and contextual PII from the document.
 
 Use only these exact tags when appropriate:
-REDACTED_NAME, REDACTED_ORGANIZATION, REDACTED_ADDRESS, REDACTED_PHONE, REDACTED_EMAIL, REDACTED_DOB, REDACTED_RELATIVE_REFERENCE
+[REDACTED_NAME]
+[REDACTED_ORGANIZATION]
+[REDACTED_ADDRESS]
+[REDACTED_PHONE]
+[REDACTED_EMAIL]
+[REDACTED_DOB]
+[REDACTED_RELATIVE_REFERENCE]
 
 Rules:
 - Replace PII with the correct tag.
@@ -119,28 +133,6 @@ Prior feedback:
     ).strip()
 
 
-def make_client() -> OpenAI:
-    return OpenAI(
-        base_url=API_BASE_URL,
-        api_key=API_KEY,
-    )
-
-
-def verify_proxy_call(client: OpenAI) -> None:
-    response = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "Reply with exactly: ok"},
-        ],
-        temperature=0,
-        max_tokens=5,
-    )
-    text = (response.choices[0].message.content or "").strip().lower()
-    if "ok" not in text:
-        raise RuntimeError(f"Proxy verification returned unexpected response: {text}")
-
-
 def get_agent_redaction(
     client: OpenAI,
     task_name: str,
@@ -156,34 +148,35 @@ def get_agent_redaction(
         prior_feedback=prior_feedback,
         attempt=attempt,
     )
-
-    completion = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=[
-            {
-                "role": "system",
-                "content": "You are an automated Data Privacy Officer redacting Indian documents under the DPDP Act 2023.",
-            },
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=TEMPERATURE,
-        max_tokens=MAX_TOKENS,
-    )
-
-    text = (completion.choices[0].message.content or "").strip()
-    if not text:
-        raise RuntimeError("Model returned empty text")
-    return text
+    try:
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an automated Data Privacy Officer redacting Indian documents under the DPDP Act 2023.",
+                },
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=TEMPERATURE,
+            max_tokens=MAX_TOKENS,
+            stream=False,
+        )
+        text = (completion.choices[0].message.content or "").strip()
+        return text if text else document_text
+    except Exception:
+        return document_text
 
 
 async def run_single_task(client: OpenAI, task_name: str) -> tuple[int, List[float], float, bool]:
     env = PiiRedactionEnv(base_url=ENV_BASE_URL)
+
     rewards: List[float] = []
     steps_taken = 0
     final_score = 0.0
     success = False
 
-    log_start(task_name, BENCHMARK, MODEL_NAME)
+    log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
 
     try:
         reset_result = await env.reset()
@@ -205,7 +198,7 @@ async def run_single_task(client: OpenAI, task_name: str) -> tuple[int, List[flo
             )
 
             step_result = await env.step(
-                PIIAction(
+                PiiRedactionAction(
                     redacted_text=action_text,
                     identified_pii_types=[],
                     reasoning="",
@@ -215,13 +208,12 @@ async def run_single_task(client: OpenAI, task_name: str) -> tuple[int, List[flo
             next_obs = step_result.observation
             reward = max(0.0, min(1.0, float(step_result.reward or 0.0)))
             done = bool(step_result.done)
-
-            info = getattr(next_obs, "metadata", None) or {}
-            error = info.get("error") if isinstance(info, dict) else None
+            info = getattr(next_obs, "metadata", {}) or {}
 
             rewards.append(reward)
-            steps_taken += 1
+            steps_taken = step
 
+            error = info.get("error") if isinstance(info, dict) else None
             log_step(
                 step=step,
                 action=truncate_action(action_text),
@@ -242,6 +234,8 @@ async def run_single_task(client: OpenAI, task_name: str) -> tuple[int, List[flo
         return steps_taken, rewards, final_score, success
 
     except Exception as e:
+        final_score = 0.0
+        success = False
         log_step(
             step=max(steps_taken, 1),
             action="exception",
@@ -249,7 +243,7 @@ async def run_single_task(client: OpenAI, task_name: str) -> tuple[int, List[flo
             done=True,
             error=str(e),
         )
-        return steps_taken, rewards, 0.0, False
+        return steps_taken, rewards, final_score, success
 
     finally:
         try:
@@ -260,11 +254,7 @@ async def run_single_task(client: OpenAI, task_name: str) -> tuple[int, List[flo
 
 
 async def main() -> None:
-    client = make_client()
-
-    # Force at least one observed request through the validator's proxy.
-    verify_proxy_call(client)
-
+    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
     for task_name in TASKS:
         await run_single_task(client, task_name)
 
