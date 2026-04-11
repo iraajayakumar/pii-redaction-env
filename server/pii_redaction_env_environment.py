@@ -89,13 +89,15 @@ class PIIRedactionEnvironment(Environment):
         self._selected_task_type = self._resolve_task_type(task_param=task)
         self._current_task = self._load_task(self._selected_task_type)
 
-        return PIIObservation(
+        result = PIIObservation(
             document_text=self._current_task["document_text"],
             task_type=self._current_task["task_type"],
             instructions=self._current_task["instructions"],
             legal_framework=self._current_task.get("legal_framework", "DPDP Act 2023"),
             attempt_number=1,
         )
+        
+        return result
 
     def step(self, action: PIIAction):  # type: ignore[override]
         self._state.step_count += 1

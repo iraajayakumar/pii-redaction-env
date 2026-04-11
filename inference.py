@@ -17,12 +17,6 @@ API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
 MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
 ENV_BASE_URL = os.getenv("ENV_BASE_URL", "http://0.0.0.0:8000")
 
-# Debug: Show environment variable configuration
-print(f"[DEBUG] API_KEY set: {bool(API_KEY)}", flush=True)
-print(f"[DEBUG] API_KEY first 20 chars: {(API_KEY or 'NONE')[:20]}", flush=True)
-print(f"[DEBUG] API_BASE_URL: {API_BASE_URL}", flush=True)
-print(f"[DEBUG] MODEL_NAME: {MODEL_NAME}", flush=True)
-
 TASKS = ["easy", "medium", "hard"]
 BENCHMARK = "pii_redaction_env"
 MAX_HARD_STEPS = 3
@@ -151,7 +145,6 @@ def get_agent_redaction(
         attempt=attempt,
     )
     try:
-        print(f"[DEBUG] About to call LLM with model={MODEL_NAME}, base_url={API_BASE_URL}", flush=True)
         completion = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
@@ -165,13 +158,9 @@ def get_agent_redaction(
             max_tokens=MAX_TOKENS,
             stream=False,
         )
-        print(f"[DEBUG] LLM call successful", flush=True)
         text = (completion.choices[0].message.content or "").strip()
         return text if text else document_text
-    except Exception as e:
-        print(f"[DEBUG] Exception in get_agent_redaction: {type(e).__name__}: {str(e)}", flush=True)
-        import traceback
-        print(f"[DEBUG] Traceback: {traceback.format_exc()}", flush=True)
+    except Exception:
         return document_text
 
 
@@ -261,11 +250,12 @@ async def run_single_task(client: OpenAI, task_name: str) -> tuple[int, List[flo
 
 
 async def main() -> None:
-    print(f"[DEBUG] Initializing OpenAI client with base_url={API_BASE_URL}", flush=True)
+    if not API_KEY:
+        raise ValueError("API_KEY not set. Set HF_TOKEN or API_KEY environment variable.")
+    
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-    print(f"[DEBUG] OpenAI client initialized successfully", flush=True)
+    
     for task_name in TASKS:
-        print(f"[DEBUG] Starting task: {task_name}", flush=True)
         await run_single_task(client, task_name)
 
 

@@ -91,28 +91,39 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_json()
-            if data.get("method") == "reset":
-                task = data.get("params", {}).get("task")
+            # OpenEnv client sends: {"type": "reset", "data": {...}}
+            if data.get("type") == "reset":
+                params = data.get("data", {})
+                task = params.get("task")
                 obs = env.reset(task=task)
                 await websocket.send_json({
-                    "observation": obs.model_dump(),
-                    "reward": None,
-                    "done": False
+                    "type": "reset",
+                    "data": {
+                        "observation": obs.model_dump(),
+                        "reward": None,
+                        "done": False
+                    }
                 })
-            elif data.get("method") == "step":
-                action_dict = data["params"]["action"]
-                action = PIIAction(**action_dict)
-                obs = env.step(action)
+            elif data.get("type") == "step":
+                params = data.get("data", {})
+                action = PIIAction(**params)
+                obs, reward, done = env.step(action)
                 await websocket.send_json({
-                    "observation": obs.model_dump(),
-                    "reward": obs.reward,
-                    "done": obs.done
+                    "type": "step",
+                    "data": {
+                        "observation": obs.model_dump(),
+                        "reward": reward,
+                        "done": done
+                    }
                 })
-            elif data.get("method") == "state":
+            elif data.get("type") == "state":
                 state = env.state
                 await websocket.send_json({
-                    "episode_id": state.episode_id,
-                    "step_count": state.step_count
+                    "type": "state",
+                    "data": {
+                        "episode_id": state.episode_id,
+                        "step_count": state.step_count
+                    }
                 })
     except WebSocketDisconnect:
         pass
