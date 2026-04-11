@@ -110,8 +110,7 @@ class PIIRedactionEnvironment(Environment):
                     attempt_number=self._state.step_count,
                 ),
                 0.0,
-                True,
-                {"error": "Step called after episode ended. Call reset() first."},
+                True
             )
 
         active_task = self._selected_task_type or self.task_type or "easy"
@@ -153,7 +152,7 @@ class PIIRedactionEnvironment(Environment):
         )
 
         reward = float(result.get("score", 0.0))
-        return next_observation, reward, self._done, result
+        return next_observation, reward, self._done
 
     def state(self) -> State:
         return self._state
