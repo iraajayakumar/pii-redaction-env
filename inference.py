@@ -202,7 +202,7 @@ async def run_single_task(client: OpenAI, task_name: str) -> tuple[int, List[flo
             )
 
             next_obs = step_result.observation
-            reward = max(0.0, min(1.0, float(step_result.reward or 0.0)))
+            reward = max(0.01, min(0.99, float(step_result.reward or 0.01)))  # Clamp to (0.01, 0.99)
             done = bool(step_result.done)
             info = getattr(next_obs, "metadata", {}) or {}
 
@@ -224,13 +224,13 @@ async def run_single_task(client: OpenAI, task_name: str) -> tuple[int, List[flo
             if done:
                 break
 
-        final_score = rewards[-1] if rewards else 0.0
-        final_score = max(0.0, min(1.0, final_score))
+        final_score = rewards[-1] if rewards else 0.01  # Use 0.01 instead of 0.0 for valid range
+        final_score = max(0.01, min(0.99, final_score))  # Clamp to (0.01, 0.99)
         success = final_score >= SUCCESS_SCORE_THRESHOLD
         return steps_taken, rewards, final_score, success
 
     except Exception as e:
-        final_score = 0.0
+        final_score = 0.01  # Use 0.01 instead of 0.0 for valid range
         success = False
         log_step(
             step=max(steps_taken, 1),
