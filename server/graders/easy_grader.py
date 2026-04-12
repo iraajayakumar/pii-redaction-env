@@ -359,7 +359,7 @@ def grade_easy_task(
     # If maximum penalty, return immediately
     if hack_penalty >= 1.0:
         return {
-            "score": 0.0,
+            "score": 0.01,  # Minimum valid score (was 0.0)
             "feedback": hack_reason,
             "pii_missed": [item["value"] for item in pii_present],
             "pii_caught": [],
@@ -371,10 +371,10 @@ def grade_easy_task(
     total_pii = count_pii_from_ground_truth(pii_present)
 
     if total_pii == 0:
-        # Document has no PII — agent scores 1.0 if it returns the document unchanged
+        # Document has no PII — agent scores high if it returns the document unchanged
         if redacted_text.strip() == original_text.strip():
             return {
-                "score": 1.0,
+                "score": 0.99,  # Maximum valid score (was 1.0)
                 "feedback": "Document contained no PII — returned correctly unchanged.",
                 "pii_missed": [],
                 "pii_caught": [],
@@ -383,7 +383,7 @@ def grade_easy_task(
             }
         else:
             return {
-                "score": 0.5,
+                "score": 0.50,
                 "feedback": "Document contained no PII but agent modified it anyway.",
                 "pii_missed": [],
                 "pii_caught": [],
@@ -403,6 +403,9 @@ def grade_easy_task(
 
     # --- Apply hacking penalty ---
     final_score = max(0.0, min(1.0, base_score - hack_penalty))
+    
+    # --- Map score to (0.01, 0.99) range (exclude 0.0 and 1.0) ---
+    final_score = 0.01 + (final_score * 0.98)
 
     # --- Build detailed feedback ---
     feedback_parts = [

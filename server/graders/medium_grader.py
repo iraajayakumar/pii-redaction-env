@@ -691,7 +691,7 @@ def grade_medium_task(
         # No PII in document
         if redacted_text.strip() == original_text.strip():
             return {
-                "score": 1.0,
+                "score": 0.99,  # Maximum valid score (was 1.0)
                 "feedback": "Document contained no PII — returned correctly unchanged.",
                 "pii_missed": [],
                 "pii_caught": [],
@@ -699,11 +699,11 @@ def grade_medium_task(
                 "structural_match": 1.0,
                 "readability_score": 1.0,
                 "sensitivity_profile": use_case,
-                "llm_validation_score": 1.0 if use_llm else None,
+                "llm_validation_score": 0.99 if use_llm else None,
             }
         else:
             return {
-                "score": 0.5,
+                "score": 0.50,
                 "feedback": "Document contained no PII but agent modified it anyway.",
                 "pii_missed": [],
                 "pii_caught": [],
@@ -711,7 +711,7 @@ def grade_medium_task(
                 "structural_match": 0.0,
                 "readability_score": 0.5,
                 "sensitivity_profile": use_case,
-                "llm_validation_score": 0.5 if use_llm else None,
+                "llm_validation_score": 0.50 if use_llm else None,
             }
     
     # Feature 2: Check PII redaction with context windows
@@ -756,6 +756,9 @@ def grade_medium_task(
     )
     
     final_score = max(0.0, min(1.0, final_score))  # Clamp to [0.0, 1.0]
+    
+    # --- Map score to (0.01, 0.99) range (exclude 0.0 and 1.0) ---
+    final_score = 0.01 + (final_score * 0.98)
     
     # --- Build feedback ---
     feedback_parts = [

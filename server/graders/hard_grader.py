@@ -345,6 +345,9 @@ def grade_hard_task(original_text: str,
     # Final score: 50% baseline + 50% adversarial defense
     final_score = 0.5 * medium_baseline + 0.5 * adversarial_defense
     
+    # --- Map score to (0.01, 0.99) range (exclude 0.0 and 1.0) ---
+    final_score = 0.01 + (final_score * 0.98)
+    
     # Extract quasi-identifiers for analysis
     found_quasi_ids = extract_quasi_identifiers(redacted_text)
     
